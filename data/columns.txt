@@ -1,0 +1,16 @@
+| Variable | Descripcion | Tipo |
+|----------|-------------|------|
+| CRIM | Tasa de criminalidad per capita | float |
+| ZN | Proporcion de terreno residencial zonificado | float |
+| INDUS | Proporcion de acres de negocios no minoristas | float |
+| CHAS | Variable dummy de Charles River (1 si limita con el rio) | int |
+| NOX | Concentracion de oxidos nitricos | float |
+| RM | Numero promedio de habitaciones por vivienda | float |
+| AGE | Proporcion de unidades ocupadas construidas antes de 1940 | float |
+| DIS | Distancias ponderadas a cinco centros de empleo | float |
+| RAD | Indice de accesibilidad a autopistas radiales | int |
+| TAX | Tasa de impuesto a la propiedad | float |
+| PTRATIO | Ratio alumno-profesor | float |
+| B | Proporcion de poblacion afroamericana | float |
+| LSTAT | Porcentaje de poblacion de estatus bajo | float |
+| MEDV | Valor mediano de viviendas (TARGET) | float |
