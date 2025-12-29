@@ -5,12 +5,14 @@ description = "MLOps Challenge - Housing Price Prediction"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.115.0",
     "ipykernel>=7.1.0",
     "joblib>=1.3.0",
     "matplotlib>=3.10.8",
     "numpy>=2.4.0",
     "pandas>=2.3.3",
     "scikit-learn>=1.8.0",
+    "uvicorn>=0.34.0",
 ]
 
 [project.scripts]
