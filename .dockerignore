@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+.claude
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+
+# Project specific
+notebooks/
+data/
+*.pdf
+*.md
+!README.md
+
+# Temporary files
+*.log
+*.tmp
+.env
+.env.*
