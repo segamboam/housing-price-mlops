@@ -8,27 +8,25 @@ from pathlib import Path
 import mlflow
 import mlflow.sklearn
 
-from src.data.loader import load_housing_data, get_data_summary
+from src.data.loader import get_data_summary, load_housing_data
 from src.data.preprocessing import preprocess_pipeline
-from src.models.train import (
-    train_model,
-    save_model,
-    get_feature_importance,
-    DEFAULT_PARAMS,
-)
 from src.models.evaluate import (
     evaluate_model,
     generate_evaluation_report,
-    save_report,
     print_metrics,
+    save_report,
+)
+from src.models.train import (
+    DEFAULT_PARAMS,
+    get_feature_importance,
+    save_model,
+    train_model,
 )
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Train a housing price prediction model"
-    )
+    parser = argparse.ArgumentParser(description="Train a housing price prediction model")
     parser.add_argument(
         "--data-path",
         type=str,
@@ -121,14 +119,16 @@ def main() -> None:
         print(f"\nMLflow run ID: {run.info.run_id}")
 
         # Log dataset parameters
-        mlflow.log_params({
-            "data_path": args.data_path,
-            "test_size": args.test_size,
-            "random_state": args.random_state,
-            "n_samples": summary["n_rows"],
-            "n_features": summary["n_columns"] - 1,  # Exclude target
-            "missing_values": summary["total_missing"],
-        })
+        mlflow.log_params(
+            {
+                "data_path": args.data_path,
+                "test_size": args.test_size,
+                "random_state": args.random_state,
+                "n_samples": summary["n_rows"],
+                "n_features": summary["n_columns"] - 1,  # Exclude target
+                "missing_values": summary["total_missing"],
+            }
+        )
 
         # Train model
         print("\n[3/5] Training RandomForest model...")
@@ -150,30 +150,28 @@ def main() -> None:
 
         # Evaluate
         print("\n[4/5] Evaluating model...")
-        train_result = evaluate_model(
-            model, data["X_train_scaled"], data["y_train"]
-        )
-        test_result = evaluate_model(
-            model, data["X_test_scaled"], data["y_test"]
-        )
+        train_result = evaluate_model(model, data["X_train_scaled"], data["y_train"])
+        test_result = evaluate_model(model, data["X_test_scaled"], data["y_test"])
         print_metrics(train_result["metrics"], "Train")
         print_metrics(test_result["metrics"], "Test")
 
         # Log metrics to MLflow
-        mlflow.log_metrics({
-            "train_rmse": train_result["metrics"]["rmse"],
-            "train_mae": train_result["metrics"]["mae"],
-            "train_r2": train_result["metrics"]["r2"],
-            "test_rmse": test_result["metrics"]["rmse"],
-            "test_mae": test_result["metrics"]["mae"],
-            "test_r2": test_result["metrics"]["r2"],
-        })
+        mlflow.log_metrics(
+            {
+                "train_rmse": train_result["metrics"]["rmse"],
+                "train_mae": train_result["metrics"]["mae"],
+                "train_r2": train_result["metrics"]["r2"],
+                "test_rmse": test_result["metrics"]["rmse"],
+                "test_mae": test_result["metrics"]["mae"],
+                "test_r2": test_result["metrics"]["r2"],
+            }
+        )
 
         # Feature importance
         feature_importance = get_feature_importance(model, data["feature_names"])
         print("\nTop 5 Feature Importance:")
         for i, (feature, importance) in enumerate(list(feature_importance.items())[:5]):
-            print(f"  {i+1}. {feature}: {importance:.4f}")
+            print(f"  {i + 1}. {feature}: {importance:.4f}")
 
         # Log feature importance as metrics
         for feature, importance in feature_importance.items():
@@ -205,20 +203,22 @@ def main() -> None:
             artifact_path="model",
             registered_model_name="housing-price-model" if args.register_model else None,
         )
-        print(f"  Model logged to MLflow")
+        print("  Model logged to MLflow")
 
         if args.register_model:
-            print(f"  Model registered as 'housing-price-model'")
+            print("  Model registered as 'housing-price-model'")
 
         if report["overfitting_warning"]:
             mlflow.set_tag("overfitting_warning", "true")
             print("\nWarning: Potential overfitting detected (R2 diff > 0.1)")
 
         # Set useful tags
-        mlflow.set_tags({
-            "model_type": "RandomForestRegressor",
-            "framework": "scikit-learn",
-        })
+        mlflow.set_tags(
+            {
+                "model_type": "RandomForestRegressor",
+                "framework": "scikit-learn",
+            }
+        )
 
     print("\n" + "=" * 50)
     print("Training completed successfully!")

@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-*.pdf
+
 
 .env
 
@@ -17,10 +17,12 @@ wheels/
 mlflow.db
 mlruns/
 
+*.pdf
 
 .claude
 
 CHECKLIST.md
 
 PLAN_MLOPS.md
+
 

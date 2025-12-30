@@ -4,7 +4,6 @@ import joblib
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-
 DEFAULT_PARAMS = {
     "n_estimators": 150,
     "max_depth": 15,
@@ -16,9 +15,7 @@ DEFAULT_PARAMS = {
 
 
 def train_model(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    params: dict | None = None
+    X_train: np.ndarray, y_train: np.ndarray, params: dict | None = None
 ) -> RandomForestRegressor:
     """Train a RandomForest regression model.
 
@@ -41,10 +38,7 @@ def train_model(
 
 
 def save_model(
-    model: RandomForestRegressor,
-    scaler,
-    output_dir: str | Path,
-    model_name: str = "housing_model"
+    model: RandomForestRegressor, scaler, output_dir: str | Path, model_name: str = "housing_model"
 ) -> dict[str, Path]:
     """Save model and scaler to disk.
 
@@ -97,8 +91,7 @@ def load_scaler(scaler_path: str | Path):
 
 
 def get_feature_importance(
-    model: RandomForestRegressor,
-    feature_names: list[str]
+    model: RandomForestRegressor, feature_names: list[str]
 ) -> dict[str, float]:
     """Get feature importance from trained model.
 
@@ -110,8 +103,4 @@ def get_feature_importance(
         Dictionary mapping feature names to importance scores.
     """
     importance = model.feature_importances_
-    return dict(sorted(
-        zip(feature_names, importance),
-        key=lambda x: x[1],
-        reverse=True
-    ))
+    return dict(sorted(zip(feature_names, importance), key=lambda x: x[1], reverse=True))

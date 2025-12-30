@@ -1,13 +1,23 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-
 TARGET_COLUMN = "MEDV"
 FEATURE_COLUMNS = [
-    "CRIM", "ZN", "INDUS", "CHAS", "NOX", "RM", "AGE",
-    "DIS", "RAD", "TAX", "PTRATIO", "B", "LSTAT"
+    "CRIM",
+    "ZN",
+    "INDUS",
+    "CHAS",
+    "NOX",
+    "RM",
+    "AGE",
+    "DIS",
+    "RAD",
+    "TAX",
+    "PTRATIO",
+    "B",
+    "LSTAT",
 ]
 
 
@@ -38,8 +48,7 @@ def impute_missing_values(df: pd.DataFrame, strategy: str = "median") -> pd.Data
 
 
 def split_features_target(
-    df: pd.DataFrame,
-    target_col: str = TARGET_COLUMN
+    df: pd.DataFrame, target_col: str = TARGET_COLUMN
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Split DataFrame into features and target.
 
@@ -56,10 +65,7 @@ def split_features_target(
 
 
 def create_train_test_split(
-    X: pd.DataFrame,
-    y: pd.Series,
-    test_size: float = 0.2,
-    random_state: int = 42
+    X: pd.DataFrame, y: pd.Series, test_size: float = 0.2, random_state: int = 42
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """Split data into train and test sets.
 
@@ -72,16 +78,11 @@ def create_train_test_split(
     Returns:
         Tuple of (X_train, X_test, y_train, y_test).
     """
-    return train_test_split(
-        X, y,
-        test_size=test_size,
-        random_state=random_state
-    )
+    return train_test_split(X, y, test_size=test_size, random_state=random_state)
 
 
 def scale_features(
-    X_train: pd.DataFrame,
-    X_test: pd.DataFrame
+    X_train: pd.DataFrame, X_test: pd.DataFrame
 ) -> tuple[np.ndarray, np.ndarray, StandardScaler]:
     """Scale features using StandardScaler.
 
@@ -105,7 +106,7 @@ def preprocess_pipeline(
     df: pd.DataFrame,
     test_size: float = 0.2,
     random_state: int = 42,
-    impute_strategy: str = "median"
+    impute_strategy: str = "median",
 ) -> dict:
     """Run the complete preprocessing pipeline.
 

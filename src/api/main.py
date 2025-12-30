@@ -5,10 +5,9 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException
 
-from src.api.schemas import HousingFeatures, PredictionResponse, HealthResponse
-from src.models.train import load_model, load_scaler
+from src.api.schemas import HealthResponse, HousingFeatures, PredictionResponse
 from src.data.preprocessing import FEATURE_COLUMNS
-
+from src.models.train import load_model, load_scaler
 
 MODEL_DIR = Path("models")
 MODEL_PATH = MODEL_DIR / "housing_model.joblib"

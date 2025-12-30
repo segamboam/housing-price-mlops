@@ -50,7 +50,7 @@ def generate_evaluation_report(
     train_metrics: dict[str, float],
     test_metrics: dict[str, float],
     feature_importance: dict[str, float] | None = None,
-    model_params: dict | None = None
+    model_params: dict | None = None,
 ) -> dict:
     """Generate a comprehensive evaluation report.
 

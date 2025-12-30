@@ -3,8 +3,20 @@ from pathlib import Path
 import pandas as pd
 
 EXPECTED_COLUMNS = [
-    "CRIM", "ZN", "INDUS", "CHAS", "NOX", "RM", "AGE",
-    "DIS", "RAD", "TAX", "PTRATIO", "B", "LSTAT", "MEDV"
+    "CRIM",
+    "ZN",
+    "INDUS",
+    "CHAS",
+    "NOX",
+    "RM",
+    "AGE",
+    "DIS",
+    "RAD",
+    "TAX",
+    "PTRATIO",
+    "B",
+    "LSTAT",
+    "MEDV",
 ]
 
 
