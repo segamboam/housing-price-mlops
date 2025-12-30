@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,21 +15,61 @@ MODEL_PATH = MODEL_DIR / "housing_model.joblib"
 SCALER_PATH = MODEL_DIR / "housing_model_scaler.joblib"
 MODEL_VERSION = "1.0.0"
 
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "housing-price-model")
+MLFLOW_MODEL_ALIAS = os.getenv("MLFLOW_MODEL_ALIAS", "champion")
+
 model = None
 scaler = None
+model_source = None
+
+
+def load_model_from_mlflow():
+    """Load model from MLflow Registry."""
+    import mlflow
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    model_uri = f"models:/{MLFLOW_MODEL_NAME}@{MLFLOW_MODEL_ALIAS}"
+
+    try:
+        loaded_model = mlflow.sklearn.load_model(model_uri)
+        print(f"Model loaded from MLflow Registry: {model_uri}")
+        return loaded_model, "mlflow"
+    except Exception as e:
+        print(f"Failed to load model with alias '{MLFLOW_MODEL_ALIAS}': {e}")
+        # Fallback to latest version
+        try:
+            model_uri = f"models:/{MLFLOW_MODEL_NAME}/latest"
+            loaded_model = mlflow.sklearn.load_model(model_uri)
+            print(f"Model loaded from MLflow Registry (latest): {model_uri}")
+            return loaded_model, "mlflow"
+        except Exception as e2:
+            print(f"Failed to load latest model from MLflow: {e2}")
+            return None, None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model on startup."""
-    global model, scaler
+    global model, scaler, model_source
 
-    if MODEL_PATH.exists() and SCALER_PATH.exists():
-        model = load_model(MODEL_PATH)
-        scaler = load_scaler(SCALER_PATH)
-        print(f"Model loaded from {MODEL_PATH}")
-    else:
-        print(f"Warning: Model not found at {MODEL_PATH}")
+    # Try to load from MLflow if tracking URI is configured
+    if MLFLOW_TRACKING_URI:
+        print(f"Attempting to load model from MLflow: {MLFLOW_TRACKING_URI}")
+        model, model_source = load_model_from_mlflow()
+        if model and SCALER_PATH.exists():
+            scaler = load_scaler(SCALER_PATH)
+            print(f"Scaler loaded from {SCALER_PATH}")
+
+    # Fallback to local model files
+    if model is None:
+        if MODEL_PATH.exists() and SCALER_PATH.exists():
+            model = load_model(MODEL_PATH)
+            scaler = load_scaler(SCALER_PATH)
+            model_source = "local"
+            print(f"Model loaded from local file: {MODEL_PATH}")
+        else:
+            print(f"Warning: Model not found at {MODEL_PATH}")
 
     yield
 
@@ -57,6 +98,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         model_loaded=model is not None,
+        model_source=model_source,
     )
 
 

@@ -13,6 +13,11 @@ wheels/
 
 .env
 
+# MLflow
+mlflow.db
+mlruns/
+
+
 .claude
 
 CHECKLIST.md

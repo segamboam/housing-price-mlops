@@ -53,6 +53,7 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Service health status")
     model_loaded: bool = Field(..., description="Whether model is loaded")
+    model_source: str | None = Field(None, description="Source of loaded model (mlflow/local)")
 
 
 class ErrorResponse(BaseModel):
