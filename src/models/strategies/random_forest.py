@@ -35,9 +35,7 @@ class RandomForestStrategy(BaseModel):
     def _create_model(self, **params: Any) -> RandomForestRegressor:
         return RandomForestRegressor(**params)
 
-    def get_feature_importance(
-        self, feature_names: list[str]
-    ) -> dict[str, float] | None:
+    def get_feature_importance(self, feature_names: list[str]) -> dict[str, float] | None:
         if self._model is None:
             return None
 

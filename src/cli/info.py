@@ -39,13 +39,13 @@ def info(
         metadata = json.load(f)
 
     # Model info panel
-    model_info = f"""[bold]Model Type:[/bold] {metadata.get('model_type', 'unknown')}
-[bold]Preprocessing:[/bold] {metadata.get('preprocessing_strategy', 'unknown')} v{metadata.get('preprocessing_version', '?')}
-[bold]Artifact ID:[/bold] {metadata.get('artifact_id', 'unknown')[:8]}...
-[bold]Created:[/bold] {metadata.get('created_at', 'unknown')[:19]}
-[bold]Training Samples:[/bold] {metadata.get('training_samples', 0)}
-[bold]Test Samples:[/bold] {metadata.get('test_samples', 0)}
-[bold]MLflow Run:[/bold] {metadata.get('mlflow_run_id', 'N/A')[:8] if metadata.get('mlflow_run_id') else 'N/A'}..."""
+    model_info = f"""[bold]Model Type:[/bold] {metadata.get("model_type", "unknown")}
+[bold]Preprocessing:[/bold] {metadata.get("preprocessing_strategy", "unknown")} v{metadata.get("preprocessing_version", "?")}
+[bold]Artifact ID:[/bold] {metadata.get("artifact_id", "unknown")[:8]}...
+[bold]Created:[/bold] {metadata.get("created_at", "unknown")[:19]}
+[bold]Training Samples:[/bold] {metadata.get("training_samples", 0)}
+[bold]Test Samples:[/bold] {metadata.get("test_samples", 0)}
+[bold]MLflow Run:[/bold] {metadata.get("mlflow_run_id", "N/A")[:8] if metadata.get("mlflow_run_id") else "N/A"}..."""
 
     console.print(info_panel(model_info, title="Model Information"))
     console.print()

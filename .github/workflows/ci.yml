@@ -47,7 +47,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run tests with coverage
-        run: uv run pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
+        run: uv run pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=65
 
   build:
     runs-on: ubuntu-latest

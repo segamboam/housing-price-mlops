@@ -3,7 +3,6 @@
 import hashlib
 from pathlib import Path
 
-import mlflow
 import mlflow.sklearn
 import pandas as pd
 import typer
@@ -11,6 +10,11 @@ from mlflow.models import infer_signature
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from sklearn.model_selection import train_test_split
 
+import mlflow
+
+# Import strategies to register them
+import src.data.preprocessing.strategies  # noqa: F401
+import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,
@@ -25,10 +29,6 @@ from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
 from src.data.preprocessing.factory import PreprocessorFactory
 from src.models.evaluate import evaluate_model, generate_evaluation_report, save_report
 from src.models.factory import ModelFactory
-
-# Import strategies to register them
-import src.data.preprocessing.strategies  # noqa: F401
-import src.models.strategies  # noqa: F401
 
 
 def compute_dataset_hash(df: pd.DataFrame) -> str:
@@ -137,8 +137,7 @@ def train(
 
         # Calculate feature stats for monitoring
         feature_stats = {
-            col: {"min": float(X[col].min()), "max": float(X[col].max())}
-            for col in FEATURE_COLUMNS
+            col: {"min": float(X[col].min()), "max": float(X[col].max())} for col in FEATURE_COLUMNS
         }
 
         # Split data

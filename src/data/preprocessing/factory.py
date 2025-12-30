@@ -77,9 +77,7 @@ class PreprocessorFactory:
 
         if strategy not in cls._registry:
             available = cls.list_available()
-            raise ValueError(
-                f"Strategy '{strategy.value}' not registered. Available: {available}"
-            )
+            raise ValueError(f"Strategy '{strategy.value}' not registered. Available: {available}")
 
         return cls._registry[strategy]()
 
@@ -93,9 +91,7 @@ class PreprocessorFactory:
         return [s.value for s in cls._registry.keys()]
 
     @classmethod
-    def get_class(
-        cls, strategy: PreprocessingStrategy | str
-    ) -> type["BasePreprocessor"]:
+    def get_class(cls, strategy: PreprocessingStrategy | str) -> type["BasePreprocessor"]:
         """Get the class for a strategy without instantiating.
 
         Args:
@@ -112,8 +108,6 @@ class PreprocessorFactory:
 
         if strategy not in cls._registry:
             available = cls.list_available()
-            raise ValueError(
-                f"Strategy '{strategy.value}' not registered. Available: {available}"
-            )
+            raise ValueError(f"Strategy '{strategy.value}' not registered. Available: {available}")
 
         return cls._registry[strategy]

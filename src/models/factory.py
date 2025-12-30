@@ -70,15 +70,11 @@ class ModelFactory:
                 model_type = ModelType(model_type)
             except ValueError:
                 available = cls.list_available()
-                raise ValueError(
-                    f"Unknown model type '{model_type}'. Available: {available}"
-                )
+                raise ValueError(f"Unknown model type '{model_type}'. Available: {available}")
 
         if model_type not in cls._registry:
             available = cls.list_available()
-            raise ValueError(
-                f"Model '{model_type.value}' not registered. Available: {available}"
-            )
+            raise ValueError(f"Model '{model_type.value}' not registered. Available: {available}")
 
         return cls._registry[model_type]()
 
@@ -109,8 +105,6 @@ class ModelFactory:
 
         if model_type not in cls._registry:
             available = cls.list_available()
-            raise ValueError(
-                f"Model '{model_type.value}' not registered. Available: {available}"
-            )
+            raise ValueError(f"Model '{model_type.value}' not registered. Available: {available}")
 
         return cls._registry[model_type]

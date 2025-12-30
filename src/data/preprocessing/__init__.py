@@ -6,9 +6,6 @@ This module provides both:
 """
 
 # Strategy pattern exports
-from src.data.preprocessing.base import BasePreprocessor
-from src.data.preprocessing.factory import PreprocessingStrategy, PreprocessorFactory
-
 # Legacy exports (backward compatibility)
 from src.data.preprocessing._legacy import (
     FEATURE_COLUMNS,
@@ -19,6 +16,8 @@ from src.data.preprocessing._legacy import (
     scale_features,
     split_features_target,
 )
+from src.data.preprocessing.base import BasePreprocessor
+from src.data.preprocessing.factory import PreprocessingStrategy, PreprocessorFactory
 
 __all__ = [
     # Strategy pattern

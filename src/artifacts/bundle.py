@@ -172,15 +172,13 @@ class MLArtifactBundle:
 
         # Parse datetime if it's a string
         if isinstance(metadata_dict.get("created_at"), str):
-            metadata_dict["created_at"] = datetime.fromisoformat(
-                metadata_dict["created_at"]
-            )
+            metadata_dict["created_at"] = datetime.fromisoformat(metadata_dict["created_at"])
 
         metadata = ArtifactMetadata(**metadata_dict)
 
         # Import strategies to ensure they're registered
-        import src.models.strategies  # noqa: F401
         import src.data.preprocessing.strategies  # noqa: F401
+        import src.models.strategies  # noqa: F401
 
         # Reconstruct model strategy wrapper
         model_strategy = ModelFactory.create(metadata.model_type)
@@ -191,9 +189,7 @@ class MLArtifactBundle:
         model_strategy.params = metadata.model_params
 
         # Reconstruct preprocessor strategy wrapper
-        preprocessor_strategy = PreprocessorFactory.create(
-            metadata.preprocessing_strategy
-        )
+        preprocessor_strategy = PreprocessorFactory.create(metadata.preprocessing_strategy)
         preprocessor_path = bundle_dir / cls.PREPROCESSOR_FILE
         if not preprocessor_path.exists():
             raise FileNotFoundError(f"Preprocessor file not found: {preprocessor_path}")

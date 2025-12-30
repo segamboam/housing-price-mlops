@@ -69,7 +69,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=ModelFactory.list_available() or ["random_forest", "gradient_boost", "xgboost", "linear"],
+        choices=ModelFactory.list_available()
+        or ["random_forest", "gradient_boost", "xgboost", "linear"],
         default="random_forest",
         help="Model strategy to use",
     )
@@ -268,8 +269,7 @@ def main() -> None:
 
     # Calculate feature statistics for model monitoring (before any preprocessing)
     feature_stats = {
-        col: {"min": float(X[col].min()), "max": float(X[col].max())}
-        for col in FEATURE_COLUMNS
+        col: {"min": float(X[col].min()), "max": float(X[col].max())} for col in FEATURE_COLUMNS
     }
     print(f"  Feature stats calculated for {len(feature_stats)} features")
 
@@ -408,26 +408,28 @@ def main() -> None:
         mlflow.log_dict(data_summary, "data_summary.json")
 
         # Add markdown description for the run (visible in MLflow UI)
-        top_features = ", ".join(list(feature_importance.keys())[:3]) if feature_importance else "N/A"
+        top_features = (
+            ", ".join(list(feature_importance.keys())[:3]) if feature_importance else "N/A"
+        )
         run_description = f"""## Experiment: {args.experiment_name}
 
 ### Model: {model.name}
 ### Preprocessing: {preprocessor.name} (v{preprocessor.version})
 
 **Configuration:**
-- Dataset: {Path(args.data_path).stem} ({summary['n_rows']} samples)
+- Dataset: {Path(args.data_path).stem} ({summary["n_rows"]} samples)
 - Train/Test split: {int((1 - args.test_size) * 100)}% / {int(args.test_size * 100)}%
 - Random state: {args.random_state}
 
 **Results:**
-- Test R²: {test_result['metrics']['r2']:.4f}
-- Test RMSE: {test_result['metrics']['rmse']:.4f}
-- Test MAE: {test_result['metrics']['mae']:.4f}
+- Test R²: {test_result["metrics"]["r2"]:.4f}
+- Test RMSE: {test_result["metrics"]["rmse"]:.4f}
+- Test MAE: {test_result["metrics"]["mae"]:.4f}
 
 **Top Features:** {top_features}
 
 **Hyperparameters:**
-{chr(10).join(f'- {k}: {v}' for k, v in model.params.items())}
+{chr(10).join(f"- {k}: {v}" for k, v in model.params.items())}
 """
         mlflow.set_tag("mlflow.note.content", run_description)
 
@@ -464,6 +466,7 @@ def main() -> None:
 
         # Also save legacy format for backward compatibility
         from src.models.train import save_model as save_model_legacy
+
         legacy_paths = save_model_legacy(model.model, preprocessor.pipeline, output_dir)
         print(f"  Legacy model saved: {legacy_paths['model_path']}")
         print(f"  Legacy scaler saved: {legacy_paths['scaler_path']}")

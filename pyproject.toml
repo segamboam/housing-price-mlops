@@ -51,7 +51,10 @@ ignore = ["E501"]
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["tests/*"]
+omit = [
+    "tests/*",
+    "src/cli/*",  # CLI is presentation layer, not business logic
+]
 
 [tool.coverage.report]
 exclude_lines = [

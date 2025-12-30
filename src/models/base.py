@@ -77,9 +77,7 @@ class BaseModel(ABC):
         return self._model.predict(X)
 
     @abstractmethod
-    def get_feature_importance(
-        self, feature_names: list[str]
-    ) -> dict[str, float] | None:
+    def get_feature_importance(self, feature_names: list[str]) -> dict[str, float] | None:
         """Get feature importance scores if supported by the model.
 
         Args:

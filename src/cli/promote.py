@@ -2,10 +2,10 @@
 
 from datetime import datetime
 
-import mlflow
 import typer
-from mlflow import MlflowClient
 
+import mlflow
+from mlflow import MlflowClient
 from src.cli.utils import console, create_versions_table, error_panel, success_panel
 from src.config.settings import get_settings
 
@@ -23,9 +23,7 @@ def get_model_versions(client: MlflowClient, model_name: str) -> list[dict]:
 
         for v in sorted(versions, key=lambda x: int(x.version), reverse=True):
             version_aliases = [alias for alias, ver in aliases.items() if ver == v.version]
-            created = datetime.fromtimestamp(v.creation_timestamp / 1000).strftime(
-                "%Y-%m-%d %H:%M"
-            )
+            created = datetime.fromtimestamp(v.creation_timestamp / 1000).strftime("%Y-%m-%d %H:%M")
             result.append(
                 {
                     "version": v.version,

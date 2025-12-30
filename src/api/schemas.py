@@ -125,9 +125,7 @@ class PredictionResponse(BaseModel):
     prediction: float = Field(
         ..., description="Precio predicho del valor mediano de vivienda en $1000s"
     )
-    prediction_formatted: str = Field(
-        ..., description="Precio formateado en USD (ej: '$24,500')"
-    )
+    prediction_formatted: str = Field(..., description="Precio formateado en USD (ej: '$24,500')")
     model_version: str = Field(..., description="Versión/ID del modelo utilizado")
     model_type: str | None = Field(
         None, description="Tipo de modelo (random_forest, gradient_boost, etc.)"
@@ -155,7 +153,9 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Service health status")
     model_loaded: bool = Field(..., description="Whether model is loaded")
-    model_source: str | None = Field(None, description="Source of loaded model (bundle/mlflow/local)")
+    model_source: str | None = Field(
+        None, description="Source of loaded model (bundle/mlflow/local)"
+    )
 
 
 class ModelInfoResponse(BaseModel):
@@ -167,7 +167,9 @@ class ModelInfoResponse(BaseModel):
     preprocessing_strategy: str = Field(
         ..., description="Estrategia de preprocesamiento (v1_median, v2_knn, v3_iterative)"
     )
-    preprocessing_version: str = Field(..., description="Versión de la estrategia de preprocesamiento")
+    preprocessing_version: str = Field(
+        ..., description="Versión de la estrategia de preprocesamiento"
+    )
     feature_names: list[str] = Field(..., description="Nombres de features en orden")
     training_samples: int = Field(..., description="Número de muestras de entrenamiento")
     test_samples: int | None = Field(None, description="Número de muestras de test")
