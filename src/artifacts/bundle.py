@@ -64,6 +64,7 @@ class MLArtifactBundle:
         train_metrics: dict[str, float] | None = None,
         test_metrics: dict[str, float] | None = None,
         feature_importance: dict[str, float] | None = None,
+        feature_stats: dict[str, dict[str, float]] | None = None,
         mlflow_run_id: str | None = None,
         mlflow_experiment_name: str | None = None,
         random_state: int = 42,
@@ -80,6 +81,7 @@ class MLArtifactBundle:
             train_metrics: Metrics on training set.
             test_metrics: Metrics on test set.
             feature_importance: Feature importance scores.
+            feature_stats: Statistics per feature (min, max) for monitoring.
             mlflow_run_id: MLflow run ID if tracked.
             mlflow_experiment_name: MLflow experiment name.
             random_state: Random seed used.
@@ -98,6 +100,7 @@ class MLArtifactBundle:
             training_samples=training_samples,
             test_samples=test_samples,
             random_state=random_state,
+            feature_stats=feature_stats or {},
             train_metrics=train_metrics or {},
             test_metrics=test_metrics or {},
             feature_importance=feature_importance or {},

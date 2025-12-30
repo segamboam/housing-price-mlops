@@ -38,6 +38,19 @@ MODEL_LOAD_STATUS = Counter(
     ["status", "source"],
 )
 
+# Model monitoring metrics
+PREDICTION_VALUE = Histogram(
+    "model_prediction_value",
+    "Distribution of predicted housing prices in $1000s",
+    buckets=[5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
+)
+
+OUT_OF_RANGE_TOTAL = Counter(
+    "prediction_input_out_of_range_total",
+    "Inputs with features outside training range",
+    ["feature"],
+)
+
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
     """Middleware to collect Prometheus metrics for HTTP requests."""
@@ -102,3 +115,21 @@ def record_model_load(status: str, source: str) -> None:
         source: Model source ('mlflow' or 'local').
     """
     MODEL_LOAD_STATUS.labels(status=status, source=source).inc()
+
+
+def record_prediction_value(value: float) -> None:
+    """Record the predicted value for distribution monitoring.
+
+    Args:
+        value: Predicted housing price in $1000s.
+    """
+    PREDICTION_VALUE.observe(value)
+
+
+def record_out_of_range(feature: str) -> None:
+    """Record when an input feature is outside training range.
+
+    Args:
+        feature: Name of the feature that is out of range.
+    """
+    OUT_OF_RANGE_TOTAL.labels(feature=feature).inc()

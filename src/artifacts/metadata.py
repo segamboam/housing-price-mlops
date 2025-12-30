@@ -59,6 +59,12 @@ class ArtifactMetadata(BaseModel):
         description="Random seed used for reproducibility",
     )
 
+    # Feature statistics for monitoring
+    feature_stats: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="Statistics per feature (min, max) from training data for drift detection",
+    )
+
     # Metrics
     train_metrics: dict[str, float] = Field(
         default_factory=dict,

@@ -1,6 +1,6 @@
 {
-  "artifact_id": "436be814-4c93-462b-8bea-11816aa026df",
-  "created_at": "2025-12-30T21:05:08.953313",
+  "artifact_id": "ab81beb4-9406-4dee-b711-f09c2985d020",
+  "created_at": "2025-12-30T21:19:38.505627",
   "model_type": "gradient_boost",
   "model_params": {
     "n_estimators": 150,
@@ -32,6 +32,60 @@
   "training_samples": 404,
   "test_samples": 102,
   "random_state": 42,
+  "feature_stats": {
+    "CRIM": {
+      "min": 0.00632,
+      "max": 88.9762
+    },
+    "ZN": {
+      "min": 0.0,
+      "max": 100.0
+    },
+    "INDUS": {
+      "min": 0.46,
+      "max": 27.74
+    },
+    "CHAS": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "NOX": {
+      "min": 0.385,
+      "max": 0.871
+    },
+    "RM": {
+      "min": 3.561,
+      "max": 8.78
+    },
+    "AGE": {
+      "min": 2.9,
+      "max": 100.0
+    },
+    "DIS": {
+      "min": 1.1296,
+      "max": 12.1265
+    },
+    "RAD": {
+      "min": 1.0,
+      "max": 24.0
+    },
+    "TAX": {
+      "min": 187.0,
+      "max": 711.0
+    },
+    "PTRATIO": {
+      "min": 12.6,
+      "max": 22.0
+    },
+    "B": {
+      "min": 0.32,
+      "max": 396.9
+    },
+    "LSTAT": {
+      "min": 1.73,
+      "max": 37.97
+    }
+  },
   "train_metrics": {
     "rmse": 0.3481,
     "mae": 0.2652,
@@ -57,7 +111,7 @@
     "CHAS": 0.001260257282214337,
     "ZN": 0.0004748855087642251
   },
-  "mlflow_run_id": "dbc1051c164948509086d750b30b55f5",
+  "mlflow_run_id": "3216aee624cd494e9a17afafa6e45904",
   "mlflow_experiment_name": "housing-price-prediction",
   "artifact_version": "1.0.0",
   "framework_versions": {

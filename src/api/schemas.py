@@ -46,6 +46,10 @@ class PredictionResponse(BaseModel):
 
     prediction: float = Field(..., description="Predicted median house value in $1000s")
     model_version: str = Field(..., description="Version of the model used")
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Warnings about input data (e.g., features outside training range)",
+    )
 
 
 class HealthResponse(BaseModel):

@@ -180,6 +180,13 @@ def main() -> None:
     X = df[FEATURE_COLUMNS]
     y = df[TARGET_COLUMN]
 
+    # Calculate feature statistics for model monitoring (before any preprocessing)
+    feature_stats = {
+        col: {"min": float(X[col].min()), "max": float(X[col].max())}
+        for col in FEATURE_COLUMNS
+    }
+    print(f"  Feature stats calculated for {len(feature_stats)} features")
+
     # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=args.test_size, random_state=args.random_state
@@ -281,6 +288,7 @@ def main() -> None:
             train_metrics=train_result["metrics"],
             test_metrics=test_result["metrics"],
             feature_importance=feature_importance,
+            feature_stats=feature_stats,
             mlflow_run_id=run.info.run_id,
             mlflow_experiment_name=args.experiment_name,
             random_state=args.random_state,

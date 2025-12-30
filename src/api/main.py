@@ -11,7 +11,9 @@ from src.api.middleware import (
     PrometheusMiddleware,
     get_metrics,
     record_model_load,
+    record_out_of_range,
     record_prediction,
+    record_prediction_value,
 )
 from src.api.schemas import (
     HealthResponse,
@@ -193,6 +195,39 @@ async def model_info():
     )
 
 
+def check_feature_ranges(
+    features: HousingFeatures,
+    feature_stats: dict[str, dict[str, float]],
+) -> list[str]:
+    """Check if input features are within training data ranges.
+
+    Args:
+        features: Input features from the request.
+        feature_stats: Statistics (min, max) from training data.
+
+    Returns:
+        List of warning messages for out-of-range features.
+    """
+    warnings = []
+    for col in FEATURE_COLUMNS:
+        value = getattr(features, col)
+        stats = feature_stats.get(col)
+        if stats is None:
+            continue
+
+        min_val = stats.get("min")
+        max_val = stats.get("max")
+
+        if min_val is not None and value < min_val:
+            warnings.append(f"{col} ({value}) is below training min ({min_val:.2f})")
+            record_out_of_range(col)
+        elif max_val is not None and value > max_val:
+            warnings.append(f"{col} ({value}) is above training max ({max_val:.2f})")
+            record_out_of_range(col)
+
+    return warnings
+
+
 @app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
 async def predict(
     features: HousingFeatures,
@@ -201,11 +236,18 @@ async def predict(
     """Predict housing price based on features.
 
     Requires API key authentication if API_KEY environment variable is set.
+    Returns warnings if input features are outside training data ranges.
     """
     start_time = time.perf_counter()
+    warnings: list[str] = []
 
     # Use artifact bundle if available (preferred)
     if artifact_bundle is not None:
+        # Check feature ranges against training data statistics
+        feature_stats = artifact_bundle.metadata.feature_stats
+        if feature_stats:
+            warnings = check_feature_ranges(features, feature_stats)
+
         # Create DataFrame with features in correct order
         feature_dict = {col: getattr(features, col) for col in FEATURE_COLUMNS}
         X = pd.DataFrame([feature_dict])
@@ -214,7 +256,7 @@ async def predict(
         prediction = artifact_bundle.predict(X)[0]
         model_version = artifact_bundle.metadata.artifact_id[:8]
     elif legacy_model is not None and legacy_scaler is not None:
-        # Fallback to legacy model
+        # Fallback to legacy model (no feature stats available)
         feature_values = [getattr(features, col) for col in FEATURE_COLUMNS]
         X = np.array(feature_values).reshape(1, -1)
         X_scaled = legacy_scaler.transform(X)
@@ -229,8 +271,10 @@ async def predict(
     # Record prediction metrics
     duration = time.perf_counter() - start_time
     record_prediction(duration)
+    record_prediction_value(float(prediction))
 
     return PredictionResponse(
         prediction=round(float(prediction), 2),
         model_version=model_version,
+        warnings=warnings,
     )
