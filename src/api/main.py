@@ -4,6 +4,7 @@ import time
 from contextlib import asynccontextmanager
 
 import numpy as np
+import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Response
 
 from src.api.middleware import (
@@ -12,8 +13,14 @@ from src.api.middleware import (
     record_model_load,
     record_prediction,
 )
-from src.api.schemas import HealthResponse, HousingFeatures, PredictionResponse
+from src.api.schemas import (
+    HealthResponse,
+    HousingFeatures,
+    ModelInfoResponse,
+    PredictionResponse,
+)
 from src.api.security import verify_api_key
+from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
 from src.data.preprocessing import FEATURE_COLUMNS
 from src.models.train import load_model, load_scaler
@@ -21,13 +28,38 @@ from src.models.train import load_model, load_scaler
 settings = get_settings()
 
 # Global state
-model = None
-scaler = None
-model_source = None
+artifact_bundle: MLArtifactBundle | None = None
+model_source: str | None = None
+
+# Legacy fallback globals (for backward compatibility)
+legacy_model = None
+legacy_scaler = None
+
+
+def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
+    """Load artifact bundle from configured path."""
+    bundle_path = settings.artifact_bundle_path
+
+    if not bundle_path.exists():
+        print(f"Artifact bundle not found at {bundle_path}")
+        return None, None
+
+    try:
+        bundle = MLArtifactBundle.load(bundle_path)
+        print(f"Artifact bundle loaded from {bundle_path}")
+        print(f"  Model type: {bundle.metadata.model_type}")
+        print(f"  Preprocessing: {bundle.metadata.preprocessing_strategy}")
+        print(f"  Artifact ID: {bundle.metadata.artifact_id}")
+        record_model_load("success", "bundle")
+        return bundle, "bundle"
+    except Exception as e:
+        print(f"Failed to load artifact bundle: {e}")
+        record_model_load("failure", "bundle")
+        return None, None
 
 
 def load_model_from_mlflow():
-    """Load model from MLflow Registry."""
+    """Load model from MLflow Registry (legacy fallback)."""
     import mlflow
 
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -54,30 +86,44 @@ def load_model_from_mlflow():
             return None, None
 
 
+def load_legacy_local_model():
+    """Load model and scaler from local files (legacy format)."""
+    if settings.model_path.exists() and settings.scaler_path.exists():
+        model = load_model(settings.model_path)
+        scaler = load_scaler(settings.scaler_path)
+        record_model_load("success", "local")
+        print(f"Legacy model loaded from {settings.model_path}")
+        return model, scaler, "local"
+    else:
+        record_model_load("failure", "local")
+        print(f"Warning: Legacy model not found at {settings.model_path}")
+        return None, None, None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model on startup."""
-    global model, scaler, model_source
+    global artifact_bundle, model_source, legacy_model, legacy_scaler
 
-    # Try to load from MLflow if tracking URI is configured
-    if settings.mlflow_tracking_uri:
+    # Priority 1: Try to load artifact bundle (preferred)
+    print("Attempting to load artifact bundle...")
+    artifact_bundle, model_source = load_artifact_bundle()
+
+    # Priority 2: Try MLflow if bundle not available
+    if artifact_bundle is None and settings.mlflow_tracking_uri:
         print(f"Attempting to load model from MLflow: {settings.mlflow_tracking_uri}")
-        model, model_source = load_model_from_mlflow()
-        if model and settings.scaler_path.exists():
-            scaler = load_scaler(settings.scaler_path)
+        legacy_model, model_source = load_model_from_mlflow()
+        if legacy_model and settings.scaler_path.exists():
+            legacy_scaler = load_scaler(settings.scaler_path)
             print(f"Scaler loaded from {settings.scaler_path}")
 
-    # Fallback to local model files
-    if model is None:
-        if settings.model_path.exists() and settings.scaler_path.exists():
-            model = load_model(settings.model_path)
-            scaler = load_scaler(settings.scaler_path)
-            model_source = "local"
-            record_model_load("success", "local")
-            print(f"Model loaded from local file: {settings.model_path}")
-        else:
-            record_model_load("failure", "local")
-            print(f"Warning: Model not found at {settings.model_path}")
+    # Priority 3: Fallback to legacy local files
+    if artifact_bundle is None and legacy_model is None:
+        print("Attempting to load legacy model files...")
+        legacy_model, legacy_scaler, model_source = load_legacy_local_model()
+
+    if artifact_bundle is None and legacy_model is None:
+        print("Warning: No model available for predictions")
 
     yield
 
@@ -108,9 +154,10 @@ async def root():
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 async def health_check():
     """Check API health status."""
+    model_loaded = artifact_bundle is not None or legacy_model is not None
     return HealthResponse(
         status="healthy",
-        model_loaded=model is not None,
+        model_loaded=model_loaded,
         model_source=model_source,
     )
 
@@ -119,6 +166,31 @@ async def health_check():
 async def metrics():
     """Expose Prometheus metrics."""
     return Response(content=get_metrics(), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/model/info", response_model=ModelInfoResponse, tags=["model"])
+async def model_info():
+    """Get information about the loaded model.
+
+    Only available when using artifact bundle format.
+    """
+    if artifact_bundle is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model info only available when using artifact bundle. Legacy model loaded.",
+        )
+
+    metadata = artifact_bundle.metadata
+    return ModelInfoResponse(
+        model_type=metadata.model_type,
+        preprocessing_strategy=metadata.preprocessing_strategy,
+        preprocessing_version=metadata.preprocessing_version,
+        feature_names=metadata.feature_names,
+        training_samples=metadata.training_samples,
+        train_metrics=metadata.train_metrics,
+        test_metrics=metadata.test_metrics,
+        artifact_id=metadata.artifact_id,
+    )
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
@@ -130,21 +202,29 @@ async def predict(
 
     Requires API key authentication if API_KEY environment variable is set.
     """
-    if model is None or scaler is None:
+    start_time = time.perf_counter()
+
+    # Use artifact bundle if available (preferred)
+    if artifact_bundle is not None:
+        # Create DataFrame with features in correct order
+        feature_dict = {col: getattr(features, col) for col in FEATURE_COLUMNS}
+        X = pd.DataFrame([feature_dict])
+
+        # Bundle handles preprocessing + prediction
+        prediction = artifact_bundle.predict(X)[0]
+        model_version = artifact_bundle.metadata.artifact_id[:8]
+    elif legacy_model is not None and legacy_scaler is not None:
+        # Fallback to legacy model
+        feature_values = [getattr(features, col) for col in FEATURE_COLUMNS]
+        X = np.array(feature_values).reshape(1, -1)
+        X_scaled = legacy_scaler.transform(X)
+        prediction = legacy_model.predict(X_scaled)[0]
+        model_version = settings.api_version
+    else:
         raise HTTPException(
             status_code=503,
             detail="Model not loaded. Please train the model first.",
         )
-
-    start_time = time.perf_counter()
-
-    # Convert input to array in correct order
-    feature_values = [getattr(features, col) for col in FEATURE_COLUMNS]
-    X = np.array(feature_values).reshape(1, -1)
-
-    # Scale and predict
-    X_scaled = scaler.transform(X)
-    prediction = model.predict(X_scaled)[0]
 
     # Record prediction metrics
     duration = time.perf_counter() - start_time
@@ -152,5 +232,5 @@ async def predict(
 
     return PredictionResponse(
         prediction=round(float(prediction), 2),
-        model_version=settings.api_version,
+        model_version=model_version,
     )

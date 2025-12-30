@@ -1,7 +1,19 @@
 """Shared test fixtures."""
 
+import os
+import sys
 import tempfile
 from pathlib import Path
+
+# CRITICAL: Clean environment variables BEFORE any app imports
+# This must happen at module load time, not in a fixture
+os.environ.pop("API_KEY", None)
+os.environ.pop("MLFLOW_TRACKING_URI", None)
+
+# Clear any cached settings if already imported
+if "src.config.settings" in sys.modules:
+    from src.config.settings import get_settings
+    get_settings.cache_clear()
 
 import numpy as np
 import pandas as pd

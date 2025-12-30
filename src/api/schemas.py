@@ -53,7 +53,20 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Service health status")
     model_loaded: bool = Field(..., description="Whether model is loaded")
-    model_source: str | None = Field(None, description="Source of loaded model (mlflow/local)")
+    model_source: str | None = Field(None, description="Source of loaded model (bundle/mlflow/local)")
+
+
+class ModelInfoResponse(BaseModel):
+    """Output schema for model info endpoint."""
+
+    model_type: str = Field(..., description="Type of model (e.g., random_forest)")
+    preprocessing_strategy: str = Field(..., description="Preprocessing strategy used")
+    preprocessing_version: str = Field(..., description="Version of preprocessing strategy")
+    feature_names: list[str] = Field(..., description="Feature names in order")
+    training_samples: int = Field(..., description="Number of training samples")
+    train_metrics: dict[str, float] = Field(..., description="Metrics on training set")
+    test_metrics: dict[str, float] = Field(..., description="Metrics on test set")
+    artifact_id: str = Field(..., description="Unique artifact identifier")
 
 
 class ErrorResponse(BaseModel):

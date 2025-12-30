@@ -25,22 +25,54 @@ VALID_FEATURES = {
 }
 
 
+class MockSettings:
+    """Mock settings for testing."""
+
+    def __init__(
+        self,
+        api_key=None,
+        model_path=Path("models/housing_model.joblib"),
+        scaler_path=Path("models/housing_model_scaler.joblib"),
+        artifact_bundle_path=Path("/nonexistent/artifact_bundle"),
+        mlflow_tracking_uri=None,
+    ):
+        self.api_title = "Test API"
+        self.api_version = "1.0.0"
+        self.api_key = api_key
+        self.api_key_header = "X-API-Key"
+        self.model_path = model_path
+        self.scaler_path = scaler_path
+        self.artifact_bundle_path = artifact_bundle_path
+        self.model_dir = Path("models")
+        self.artifact_bundle_dir = "artifact_bundle"
+        self.mlflow_tracking_uri = mlflow_tracking_uri
+        self.mlflow_model_name = "test-model"
+        self.mlflow_model_alias = "champion"
+        self.metrics_enabled = False
+
+    @property
+    def api_key_required(self):
+        return self.api_key is not None and len(self.api_key) > 0
+
+
 @pytest.fixture
 def client_with_model(trained_model_artifacts: dict):
-    """Create test client with a loaded model."""
+    """Create test client with a loaded model (legacy mode)."""
     from src.api import main
 
-    # Inject model and scaler
-    main.model = trained_model_artifacts["model"]
-    main.scaler = trained_model_artifacts["scaler"]
+    # Reset artifact bundle and use legacy model
+    main.artifact_bundle = None
+    main.legacy_model = trained_model_artifacts["model"]
+    main.legacy_scaler = trained_model_artifacts["scaler"]
     main.model_source = "test"
 
     with TestClient(main.app) as client:
         yield client
 
     # Cleanup
-    main.model = None
-    main.scaler = None
+    main.artifact_bundle = None
+    main.legacy_model = None
+    main.legacy_scaler = None
     main.model_source = None
 
 
@@ -50,27 +82,18 @@ def client_without_model(monkeypatch):
     from src.api import main
     from src.config import settings as settings_module
 
-    # Create mock settings with non-existent paths
-    class MockSettings:
-        api_title = "Test API"
-        api_version = "1.0.0"
-        api_key = None
-        api_key_header = "X-API-Key"
-        model_path = Path("/nonexistent/model.joblib")
-        scaler_path = Path("/nonexistent/scaler.joblib")
-        mlflow_tracking_uri = None
-        mlflow_model_name = "test-model"
-        mlflow_model_alias = "champion"
-        metrics_enabled = False
-        api_key_required = False
-
-    mock_settings = MockSettings()
+    mock_settings = MockSettings(
+        model_path=Path("/nonexistent/model.joblib"),
+        scaler_path=Path("/nonexistent/scaler.joblib"),
+        artifact_bundle_path=Path("/nonexistent/artifact_bundle"),
+    )
     monkeypatch.setattr(main, "settings", mock_settings)
     monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
 
     # Reset global state
-    main.model = None
-    main.scaler = None
+    main.artifact_bundle = None
+    main.legacy_model = None
+    main.legacy_scaler = None
     main.model_source = None
 
     with TestClient(main.app) as client:
@@ -287,27 +310,17 @@ class TestAPIKeySecurity:
         from src.api import main
         from src.config import settings as settings_module
 
-        # Create settings with API key required
-        class MockSettings:
-            api_title = "Test API"
-            api_version = "1.0.0"
-            api_key = "test-secret-key"
-            api_key_header = "X-API-Key"
-            model_path = Path("models/housing_model.joblib")
-            scaler_path = Path("models/housing_model_scaler.joblib")
-            mlflow_tracking_uri = None
-            mlflow_model_name = "test-model"
-            mlflow_model_alias = "champion"
-            metrics_enabled = False
-            api_key_required = True
-
-        mock_settings = MockSettings()
+        mock_settings = MockSettings(
+            api_key="test-secret-key",
+            artifact_bundle_path=Path("/nonexistent/artifact_bundle"),
+        )
         monkeypatch.setattr(main, "settings", mock_settings)
         monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
 
-        # Inject model
-        main.model = trained_model_artifacts["model"]
-        main.scaler = trained_model_artifacts["scaler"]
+        # Inject model using legacy mode
+        main.artifact_bundle = None
+        main.legacy_model = trained_model_artifacts["model"]
+        main.legacy_scaler = trained_model_artifacts["scaler"]
         main.model_source = "test"
 
         # Also patch security module
@@ -325,29 +338,19 @@ class TestAPIKeySecurity:
             assert response.status_code == 200
 
         # Cleanup
-        main.model = None
-        main.scaler = None
+        main.artifact_bundle = None
+        main.legacy_model = None
+        main.legacy_scaler = None
 
     def test_predict_without_api_key_when_required(self, trained_model_artifacts, monkeypatch):
         """Test prediction fails without API key when required."""
         from src.api import main
         from src.config import settings as settings_module
 
-        # Create settings with API key required
-        class MockSettings:
-            api_title = "Test API"
-            api_version = "1.0.0"
-            api_key = "test-secret-key"
-            api_key_header = "X-API-Key"
-            model_path = Path("models/housing_model.joblib")
-            scaler_path = Path("models/housing_model_scaler.joblib")
-            mlflow_tracking_uri = None
-            mlflow_model_name = "test-model"
-            mlflow_model_alias = "champion"
-            metrics_enabled = False
-            api_key_required = True
-
-        mock_settings = MockSettings()
+        mock_settings = MockSettings(
+            api_key="test-secret-key",
+            artifact_bundle_path=Path("/nonexistent/artifact_bundle"),
+        )
         monkeypatch.setattr(main, "settings", mock_settings)
         monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
 
@@ -356,9 +359,10 @@ class TestAPIKeySecurity:
 
         monkeypatch.setattr(security, "settings", mock_settings)
 
-        # Inject model
-        main.model = trained_model_artifacts["model"]
-        main.scaler = trained_model_artifacts["scaler"]
+        # Inject model using legacy mode
+        main.artifact_bundle = None
+        main.legacy_model = trained_model_artifacts["model"]
+        main.legacy_scaler = trained_model_artifacts["scaler"]
         main.model_source = "test"
 
         with TestClient(main.app) as client:
@@ -367,29 +371,19 @@ class TestAPIKeySecurity:
             assert response.status_code == 401
 
         # Cleanup
-        main.model = None
-        main.scaler = None
+        main.artifact_bundle = None
+        main.legacy_model = None
+        main.legacy_scaler = None
 
     def test_predict_with_invalid_api_key(self, trained_model_artifacts, monkeypatch):
         """Test prediction fails with invalid API key."""
         from src.api import main
         from src.config import settings as settings_module
 
-        # Create settings with API key required
-        class MockSettings:
-            api_title = "Test API"
-            api_version = "1.0.0"
-            api_key = "test-secret-key"
-            api_key_header = "X-API-Key"
-            model_path = Path("models/housing_model.joblib")
-            scaler_path = Path("models/housing_model_scaler.joblib")
-            mlflow_tracking_uri = None
-            mlflow_model_name = "test-model"
-            mlflow_model_alias = "champion"
-            metrics_enabled = False
-            api_key_required = True
-
-        mock_settings = MockSettings()
+        mock_settings = MockSettings(
+            api_key="test-secret-key",
+            artifact_bundle_path=Path("/nonexistent/artifact_bundle"),
+        )
         monkeypatch.setattr(main, "settings", mock_settings)
         monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
 
@@ -398,9 +392,10 @@ class TestAPIKeySecurity:
 
         monkeypatch.setattr(security, "settings", mock_settings)
 
-        # Inject model
-        main.model = trained_model_artifacts["model"]
-        main.scaler = trained_model_artifacts["scaler"]
+        # Inject model using legacy mode
+        main.artifact_bundle = None
+        main.legacy_model = trained_model_artifacts["model"]
+        main.legacy_scaler = trained_model_artifacts["scaler"]
         main.model_source = "test"
 
         with TestClient(main.app) as client:
@@ -413,5 +408,6 @@ class TestAPIKeySecurity:
             assert response.status_code == 403
 
         # Cleanup
-        main.model = None
-        main.scaler = None
+        main.artifact_bundle = None
+        main.legacy_model = None
+        main.legacy_scaler = None

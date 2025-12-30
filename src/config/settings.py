@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Model Settings
     model_dir: Path = Path("models")
     model_name: str = "housing_model"
+    artifact_bundle_dir: str = "artifact_bundle"
 
     # MLflow Settings
     mlflow_tracking_uri: str | None = None
@@ -43,6 +44,11 @@ class Settings(BaseSettings):
     def scaler_path(self) -> Path:
         """Path to the scaler file."""
         return self.model_dir / f"{self.model_name}_scaler.joblib"
+
+    @property
+    def artifact_bundle_path(self) -> Path:
+        """Path to the artifact bundle directory."""
+        return self.model_dir / self.artifact_bundle_dir
 
     @property
     def api_key_required(self) -> bool:
