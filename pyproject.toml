@@ -14,7 +14,9 @@ dependencies = [
     "pandas>=2.3.3",
     "prometheus-client>=0.21.0",
     "pydantic-settings>=2.0.0",
+    "rich>=13.0.0",
     "scikit-learn>=1.8.0",
+    "typer>=0.15.0",
     "uvicorn>=0.34.0",
     "xgboost>=2.0.0",
 ]
@@ -30,6 +32,7 @@ dev = [
 
 [project.scripts]
 train = "train:main"
+housing = "src.cli.main:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
