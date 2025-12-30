@@ -48,11 +48,25 @@ def client_with_model(trained_model_artifacts: dict):
 def client_without_model(monkeypatch):
     """Create test client without a loaded model."""
     from src.api import main
+    from src.config import settings as settings_module
 
-    # Patch the paths to non-existent files so lifespan doesn't load model
-    monkeypatch.setattr(main, "MODEL_PATH", Path("/nonexistent/model.joblib"))
-    monkeypatch.setattr(main, "SCALER_PATH", Path("/nonexistent/scaler.joblib"))
-    monkeypatch.setattr(main, "MLFLOW_TRACKING_URI", None)
+    # Create mock settings with non-existent paths
+    class MockSettings:
+        api_title = "Test API"
+        api_version = "1.0.0"
+        api_key = None
+        api_key_header = "X-API-Key"
+        model_path = Path("/nonexistent/model.joblib")
+        scaler_path = Path("/nonexistent/scaler.joblib")
+        mlflow_tracking_uri = None
+        mlflow_model_name = "test-model"
+        mlflow_model_alias = "champion"
+        metrics_enabled = False
+        api_key_required = False
+
+    mock_settings = MockSettings()
+    monkeypatch.setattr(main, "settings", mock_settings)
+    monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
 
     # Reset global state
     main.model = None
@@ -243,3 +257,161 @@ class TestAPIDocumentation:
         response = client_with_model.get("/docs")
 
         assert response.status_code == 200
+
+
+class TestMetricsEndpoint:
+    """Tests for the metrics endpoint."""
+
+    def test_metrics_endpoint_returns_prometheus_format(self, client_with_model):
+        """Test metrics endpoint returns Prometheus format."""
+        response = client_with_model.get("/metrics")
+
+        assert response.status_code == 200
+        assert "text/plain" in response.headers["content-type"]
+        # Check for some expected metric names
+        content = response.text
+        assert "http_requests_total" in content or "predictions_total" in content
+
+
+class TestAPIKeySecurity:
+    """Tests for API key authentication."""
+
+    def test_predict_without_api_key_when_not_required(self, client_with_model):
+        """Test prediction works without API key when not required."""
+        response = client_with_model.post("/predict", json=VALID_FEATURES)
+
+        assert response.status_code == 200
+
+    def test_predict_with_api_key_when_required(self, trained_model_artifacts, monkeypatch):
+        """Test prediction with valid API key when required."""
+        from src.api import main
+        from src.config import settings as settings_module
+
+        # Create settings with API key required
+        class MockSettings:
+            api_title = "Test API"
+            api_version = "1.0.0"
+            api_key = "test-secret-key"
+            api_key_header = "X-API-Key"
+            model_path = Path("models/housing_model.joblib")
+            scaler_path = Path("models/housing_model_scaler.joblib")
+            mlflow_tracking_uri = None
+            mlflow_model_name = "test-model"
+            mlflow_model_alias = "champion"
+            metrics_enabled = False
+            api_key_required = True
+
+        mock_settings = MockSettings()
+        monkeypatch.setattr(main, "settings", mock_settings)
+        monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
+
+        # Inject model
+        main.model = trained_model_artifacts["model"]
+        main.scaler = trained_model_artifacts["scaler"]
+        main.model_source = "test"
+
+        # Also patch security module
+        from src.api import security
+
+        monkeypatch.setattr(security, "settings", mock_settings)
+
+        with TestClient(main.app) as client:
+            # Request with valid API key
+            response = client.post(
+                "/predict",
+                json=VALID_FEATURES,
+                headers={"X-API-Key": "test-secret-key"},
+            )
+            assert response.status_code == 200
+
+        # Cleanup
+        main.model = None
+        main.scaler = None
+
+    def test_predict_without_api_key_when_required(self, trained_model_artifacts, monkeypatch):
+        """Test prediction fails without API key when required."""
+        from src.api import main
+        from src.config import settings as settings_module
+
+        # Create settings with API key required
+        class MockSettings:
+            api_title = "Test API"
+            api_version = "1.0.0"
+            api_key = "test-secret-key"
+            api_key_header = "X-API-Key"
+            model_path = Path("models/housing_model.joblib")
+            scaler_path = Path("models/housing_model_scaler.joblib")
+            mlflow_tracking_uri = None
+            mlflow_model_name = "test-model"
+            mlflow_model_alias = "champion"
+            metrics_enabled = False
+            api_key_required = True
+
+        mock_settings = MockSettings()
+        monkeypatch.setattr(main, "settings", mock_settings)
+        monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
+
+        # Also patch security module
+        from src.api import security
+
+        monkeypatch.setattr(security, "settings", mock_settings)
+
+        # Inject model
+        main.model = trained_model_artifacts["model"]
+        main.scaler = trained_model_artifacts["scaler"]
+        main.model_source = "test"
+
+        with TestClient(main.app) as client:
+            # Request without API key
+            response = client.post("/predict", json=VALID_FEATURES)
+            assert response.status_code == 401
+
+        # Cleanup
+        main.model = None
+        main.scaler = None
+
+    def test_predict_with_invalid_api_key(self, trained_model_artifacts, monkeypatch):
+        """Test prediction fails with invalid API key."""
+        from src.api import main
+        from src.config import settings as settings_module
+
+        # Create settings with API key required
+        class MockSettings:
+            api_title = "Test API"
+            api_version = "1.0.0"
+            api_key = "test-secret-key"
+            api_key_header = "X-API-Key"
+            model_path = Path("models/housing_model.joblib")
+            scaler_path = Path("models/housing_model_scaler.joblib")
+            mlflow_tracking_uri = None
+            mlflow_model_name = "test-model"
+            mlflow_model_alias = "champion"
+            metrics_enabled = False
+            api_key_required = True
+
+        mock_settings = MockSettings()
+        monkeypatch.setattr(main, "settings", mock_settings)
+        monkeypatch.setattr(settings_module, "get_settings", lambda: mock_settings)
+
+        # Also patch security module
+        from src.api import security
+
+        monkeypatch.setattr(security, "settings", mock_settings)
+
+        # Inject model
+        main.model = trained_model_artifacts["model"]
+        main.scaler = trained_model_artifacts["scaler"]
+        main.model_source = "test"
+
+        with TestClient(main.app) as client:
+            # Request with wrong API key
+            response = client.post(
+                "/predict",
+                json=VALID_FEATURES,
+                headers={"X-API-Key": "wrong-key"},
+            )
+            assert response.status_code == 403
+
+        # Cleanup
+        main.model = None
+        main.scaler = None
