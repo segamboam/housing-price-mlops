@@ -132,9 +132,49 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.api_title,
-    description="API for predicting Boston housing prices using ML",
+    description="""
+## Housing Price Prediction API
+
+API para predecir precios de viviendas basándose en características del inmueble y su ubicación.
+
+### Modelo
+- **Algoritmo**: Configurable (RandomForest, GradientBoost, XGBoost, Linear)
+- **Features**: 13 características (CRIM, ZN, INDUS, CHAS, NOX, RM, AGE, DIS, RAD, TAX, PTRATIO, B, LSTAT)
+- **Target**: MEDV (valor mediano en $1000s)
+
+### Autenticación
+El endpoint `/predict` requiere API Key en el header `X-API-Key` si está configurada.
+
+### Endpoints Principales
+- `POST /predict` - Predicción individual de precio
+- `GET /model/info` - Información del modelo activo
+- `GET /health` - Estado del servicio
+- `GET /metrics` - Métricas Prometheus
+
+### Ejemplo de uso
+```bash
+curl -X POST "http://localhost:8000/predict" \\
+  -H "X-API-Key: your-api-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"CRIM": 0.00632, "ZN": 18.0, "INDUS": 2.31, "CHAS": 0, "NOX": 0.538, "RM": 6.575, "AGE": 65.2, "DIS": 4.09, "RAD": 1, "TAX": 296.0, "PTRATIO": 15.3, "B": 396.9, "LSTAT": 4.98}'
+```
+    """,
     version=settings.api_version,
     lifespan=lifespan,
+    contact={
+        "name": "MLOps Team",
+        "url": "https://github.com/serch/meli_challenge",
+    },
+    license_info={
+        "name": "MIT",
+    },
+    openapi_tags=[
+        {"name": "info", "description": "Información general de la API"},
+        {"name": "health", "description": "Health checks y estado del servicio"},
+        {"name": "prediction", "description": "Endpoints de predicción de precios"},
+        {"name": "model", "description": "Información y gestión del modelo"},
+        {"name": "monitoring", "description": "Métricas y observabilidad"},
+    ],
 )
 
 # Add Prometheus middleware if enabled
@@ -172,14 +212,15 @@ async def metrics():
 
 @app.get("/model/info", response_model=ModelInfoResponse, tags=["model"])
 async def model_info():
-    """Get information about the loaded model.
+    """Obtener información detallada del modelo activo.
 
-    Only available when using artifact bundle format.
+    Incluye métricas, feature importance, y metadata de MLflow.
+    Solo disponible cuando se usa el formato artifact bundle.
     """
     if artifact_bundle is None:
         raise HTTPException(
             status_code=503,
-            detail="Model info only available when using artifact bundle. Legacy model loaded.",
+            detail="Model info solo disponible con artifact bundle. Modelo legacy cargado.",
         )
 
     metadata = artifact_bundle.metadata
@@ -189,9 +230,14 @@ async def model_info():
         preprocessing_version=metadata.preprocessing_version,
         feature_names=metadata.feature_names,
         training_samples=metadata.training_samples,
+        test_samples=metadata.test_samples if metadata.test_samples else None,
         train_metrics=metadata.train_metrics,
         test_metrics=metadata.test_metrics,
+        feature_importance=metadata.feature_importance if metadata.feature_importance else None,
         artifact_id=metadata.artifact_id,
+        mlflow_run_id=metadata.mlflow_run_id,
+        mlflow_experiment=metadata.mlflow_experiment_name,
+        created_at=metadata.created_at.isoformat() if metadata.created_at else None,
     )
 
 
@@ -273,8 +319,11 @@ async def predict(
     record_prediction(duration)
     record_prediction_value(float(prediction))
 
+    prediction_value = round(float(prediction), 2)
     return PredictionResponse(
-        prediction=round(float(prediction), 2),
+        prediction=prediction_value,
+        prediction_formatted=f"${prediction_value * 1000:,.0f}",
         model_version=model_version,
+        model_type=artifact_bundle.metadata.model_type if artifact_bundle else None,
         warnings=warnings,
     )

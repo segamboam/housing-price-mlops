@@ -10,13 +10,17 @@ import hashlib
 import os
 from pathlib import Path
 
-import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from mlflow.models import infer_signature
 from sklearn.model_selection import train_test_split
 
+import mlflow
+import src.data.preprocessing.strategies  # noqa: F401
+
+# Import strategies to register them
+import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.data.loader import get_data_summary, load_housing_data
 from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
@@ -28,10 +32,6 @@ from src.models.evaluate import (
     save_report,
 )
 from src.models.factory import ModelFactory
-
-# Import strategies to register them
-import src.models.strategies  # noqa: F401
-import src.data.preprocessing.strategies  # noqa: F401
 
 
 def parse_args() -> argparse.Namespace:
@@ -151,6 +151,92 @@ def create_input_example(X: pd.DataFrame) -> dict:
     return X.iloc[0].to_dict()
 
 
+def save_evaluation_plots(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    feature_importance: dict[str, float],
+    output_dir: Path,
+) -> dict[str, Path]:
+    """Generate and save evaluation plots.
+
+    Args:
+        y_true: Actual target values.
+        y_pred: Predicted values.
+        feature_importance: Feature importance scores.
+        output_dir: Directory to save plots.
+
+    Returns:
+        Dictionary mapping plot names to file paths.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")  # Non-interactive backend
+    import matplotlib.pyplot as plt
+
+    plots_dir = output_dir / "plots"
+    plots_dir.mkdir(exist_ok=True)
+    plots = {}
+
+    # 1. Actual vs Predicted
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(y_true, y_pred, alpha=0.5, edgecolors="none")
+    min_val, max_val = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
+    ax.plot([min_val, max_val], [min_val, max_val], "r--", label="Perfect prediction")
+    ax.set_xlabel("Actual Values")
+    ax.set_ylabel("Predicted Values")
+    ax.set_title("Actual vs Predicted Values")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    path = plots_dir / "actual_vs_predicted.png"
+    fig.savefig(path, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    plots["actual_vs_predicted"] = path
+
+    # 2. Residuals plot
+    residuals = y_true - y_pred
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(y_pred, residuals, alpha=0.5, edgecolors="none")
+    ax.axhline(y=0, color="r", linestyle="--")
+    ax.set_xlabel("Predicted Values")
+    ax.set_ylabel("Residuals (Actual - Predicted)")
+    ax.set_title("Residual Plot")
+    ax.grid(True, alpha=0.3)
+    path = plots_dir / "residuals.png"
+    fig.savefig(path, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    plots["residuals"] = path
+
+    # 3. Feature Importance (if available)
+    if feature_importance:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        features = list(feature_importance.keys())
+        importances = list(feature_importance.values())
+        colors = plt.cm.Blues(np.linspace(0.4, 0.8, len(features)))
+        ax.barh(features, importances, color=colors)
+        ax.set_xlabel("Importance")
+        ax.set_title("Feature Importance")
+        ax.grid(True, alpha=0.3, axis="x")
+        path = plots_dir / "feature_importance.png"
+        fig.savefig(path, dpi=100, bbox_inches="tight")
+        plt.close(fig)
+        plots["feature_importance"] = path
+
+    # 4. Residuals histogram
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.hist(residuals, bins=30, edgecolor="black", alpha=0.7)
+    ax.axvline(x=0, color="r", linestyle="--")
+    ax.set_xlabel("Residual Value")
+    ax.set_ylabel("Frequency")
+    ax.set_title("Distribution of Residuals")
+    ax.grid(True, alpha=0.3)
+    path = plots_dir / "residuals_histogram.png"
+    fig.savefig(path, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    plots["residuals_histogram"] = path
+
+    return plots
+
+
 def main() -> None:
     """Run the complete training pipeline."""
     args = parse_args()
@@ -191,7 +277,7 @@ def main() -> None:
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=args.test_size, random_state=args.random_state
     )
-    print(f"\n[2/6] Data split:")
+    print("\n[2/6] Data split:")
     print(f"  Train size: {len(y_train)}")
     print(f"  Test size: {len(y_test)}")
 
@@ -203,8 +289,19 @@ def main() -> None:
     X_test_transformed = preprocessor.transform(X_test)
     print(f"  Strategy: {preprocessor.description}")
 
-    # Run name for MLflow
+    # Create and train model first to get params for run name
+    print(f"\n[4/6] Training {args.model_type} model...")
+    model = ModelFactory.create(args.model_type)
+    extra_params = build_model_params(args)
+    model.train(X_train_transformed, y_train.values, **extra_params)
+
+    # Build descriptive run name with key hyperparameters
+    key_param_names = ["n_estimators", "max_depth", "learning_rate"]
+    key_params = {k: v for k, v in model.params.items() if k in key_param_names}
+    param_str = "_".join(f"{k}={v}" for k, v in key_params.items()) if key_params else ""
     run_name = f"{args.model_type}_{args.preprocessing_strategy}"
+    if param_str:
+        run_name = f"{run_name}_{param_str}"
 
     # Start MLflow run
     with mlflow.start_run(run_name=run_name) as run:
@@ -235,13 +332,7 @@ def main() -> None:
             }
         )
 
-        # Create and train model
-        print(f"\n[4/6] Training {args.model_type} model...")
-        model = ModelFactory.create(args.model_type)
-        extra_params = build_model_params(args)
-        model.train(X_train_transformed, y_train.values, **extra_params)
-
-        # Log model hyperparameters
+        # Log model hyperparameters (model already trained before run started)
         mlflow.log_params({f"model_{k}": v for k, v in model.params.items()})
         print(f"  Model params: {model.params}")
 
@@ -277,6 +368,78 @@ def main() -> None:
         else:
             feature_importance = {}
 
+        # Generate and log evaluation plots
+        output_dir = Path(args.output_dir)
+        print("\n  Generating evaluation plots...")
+        plots = save_evaluation_plots(
+            y_test.values,
+            test_result["predictions"],
+            feature_importance,
+            output_dir,
+        )
+        for name, plot_path in plots.items():
+            mlflow.log_artifact(str(plot_path), artifact_path="plots")
+        print(f"  Logged {len(plots)} plots to MLflow")
+
+        # Log detailed data summary as artifact
+        data_summary = {
+            "n_samples": summary["n_rows"],
+            "n_features": len(FEATURE_COLUMNS),
+            "missing_values_total": summary["total_missing"],
+            "train_samples": len(y_train),
+            "test_samples": len(y_test),
+            "feature_stats": {
+                col: {
+                    "mean": float(X[col].mean()),
+                    "std": float(X[col].std()),
+                    "min": float(X[col].min()),
+                    "max": float(X[col].max()),
+                    "missing": int(X[col].isna().sum()),
+                }
+                for col in FEATURE_COLUMNS
+            },
+            "target_stats": {
+                "mean": float(y.mean()),
+                "std": float(y.std()),
+                "min": float(y.min()),
+                "max": float(y.max()),
+            },
+        }
+        mlflow.log_dict(data_summary, "data_summary.json")
+
+        # Add markdown description for the run (visible in MLflow UI)
+        top_features = ", ".join(list(feature_importance.keys())[:3]) if feature_importance else "N/A"
+        run_description = f"""## Experiment: {args.experiment_name}
+
+### Model: {model.name}
+### Preprocessing: {preprocessor.name} (v{preprocessor.version})
+
+**Configuration:**
+- Dataset: {Path(args.data_path).stem} ({summary['n_rows']} samples)
+- Train/Test split: {int((1 - args.test_size) * 100)}% / {int(args.test_size * 100)}%
+- Random state: {args.random_state}
+
+**Results:**
+- Test R²: {test_result['metrics']['r2']:.4f}
+- Test RMSE: {test_result['metrics']['rmse']:.4f}
+- Test MAE: {test_result['metrics']['mae']:.4f}
+
+**Top Features:** {top_features}
+
+**Hyperparameters:**
+{chr(10).join(f'- {k}: {v}' for k, v in model.params.items())}
+"""
+        mlflow.set_tag("mlflow.note.content", run_description)
+
+        # Add additional descriptive tags
+        mlflow.set_tags(
+            {
+                "author": os.getenv("USER", "unknown"),
+                "purpose": "training",
+                "environment": os.getenv("ENVIRONMENT", "development"),
+            }
+        )
+
         # Create artifact bundle
         print(f"\n[6/6] Saving artifact bundle to {args.output_dir}...")
         bundle = MLArtifactBundle.create(
@@ -294,7 +457,6 @@ def main() -> None:
             random_state=args.random_state,
         )
 
-        output_dir = Path(args.output_dir)
         bundle_path = output_dir / "artifact_bundle"
         bundle.save(bundle_path)
         print(f"  Bundle saved: {bundle_path}")
