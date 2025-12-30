@@ -6,11 +6,15 @@ Outputs a unified MLArtifactBundle for consistent training/inference.
 """
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
+import numpy as np
+import pandas as pd
+from mlflow.models import infer_signature
 from sklearn.model_selection import train_test_split
 
 from src.artifacts.bundle import MLArtifactBundle
@@ -137,6 +141,16 @@ def build_model_params(args: argparse.Namespace) -> dict:
     return params
 
 
+def compute_dataset_hash(df: pd.DataFrame) -> str:
+    """Compute a hash of the dataset for versioning."""
+    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()[:12]
+
+
+def create_input_example(X: pd.DataFrame) -> dict:
+    """Create a sample input for model signature."""
+    return X.iloc[0].to_dict()
+
+
 def main() -> None:
     """Run the complete training pipeline."""
     args = parse_args()
@@ -157,8 +171,10 @@ def main() -> None:
     print(f"\n[1/6] Loading data from {args.data_path}...")
     df = load_housing_data(args.data_path)
     summary = get_data_summary(df)
+    dataset_hash = compute_dataset_hash(df)
     print(f"  Loaded {summary['n_rows']} rows, {summary['n_columns']} columns")
     print(f"  Total missing values: {summary['total_missing']}")
+    print(f"  Dataset hash: {dataset_hash}")
 
     # Split features and target
     X = df[FEATURE_COLUMNS]
@@ -199,6 +215,16 @@ def main() -> None:
                 "model_type": args.model_type,
                 "preprocessing_strategy": args.preprocessing_strategy,
                 "preprocessing_version": preprocessor.version,
+                "dataset_hash": dataset_hash,
+            }
+        )
+
+        # Log dataset info as tags for easier filtering
+        mlflow.set_tags(
+            {
+                "dataset.name": Path(args.data_path).stem,
+                "dataset.hash": dataset_hash,
+                "dataset.samples": str(summary["n_rows"]),
             }
         )
 
@@ -287,16 +313,41 @@ def main() -> None:
         mlflow.log_artifact(str(legacy_paths["scaler_path"]))
         mlflow.log_artifact(str(report_path))
 
-        # Log model to MLflow with signature
-        mlflow.sklearn.log_model(
+        # Create model signature with input example
+        input_example = create_input_example(X_train)
+        signature = infer_signature(
+            X_train_transformed,
+            model.model.predict(X_train_transformed[:1]),
+        )
+
+        # Log model to MLflow with signature and input example
+        model_info = mlflow.sklearn.log_model(
             model.model,
             artifact_path="model",
+            signature=signature,
+            input_example=np.array([list(input_example.values())]),
             registered_model_name="housing-price-model" if args.register_model else None,
         )
-        print("  Model logged to MLflow")
+        print(f"  Model logged to MLflow: {model_info.model_uri}")
 
         if args.register_model:
             print("  Model registered as 'housing-price-model'")
+            # Set alias for the new version if requested
+            client = mlflow.MlflowClient()
+            # Use search_model_versions instead of deprecated get_latest_versions
+            versions = client.search_model_versions("name='housing-price-model'")
+            if versions:
+                # Get the latest version (highest version number)
+                latest_version = max(v.version for v in versions)
+                # Mark as challenger (ready for testing)
+                try:
+                    client.set_registered_model_alias(
+                        "housing-price-model", "challenger", latest_version
+                    )
+                    print(f"  Model version {latest_version} aliased as 'challenger'")
+                    print("  To promote: python scripts/promote_model.py --version", latest_version)
+                except Exception as e:
+                    print(f"  Warning: Could not set alias: {e}")
 
         if report["overfitting_warning"]:
             mlflow.set_tag("overfitting_warning", "true")
