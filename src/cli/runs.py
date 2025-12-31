@@ -2,9 +2,9 @@
 
 from datetime import datetime
 
+import mlflow
 import typer
 
-import mlflow
 from src.cli.utils import console, create_runs_table, error_panel
 from src.config.settings import get_settings
 
