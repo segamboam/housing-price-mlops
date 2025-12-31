@@ -20,6 +20,7 @@ from src.cli.utils import (
     create_feature_importance_table,
     create_metrics_table,
     error_panel,
+    select_option,
     success_panel,
 )
 from src.data.loader import get_data_summary, load_housing_data
@@ -85,8 +86,32 @@ def train(
         "--tracking-uri",
         help="MLflow tracking URI",
     ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Interactive mode: select model and preprocessing from menu",
+    ),
 ) -> None:
     """Train a housing price prediction model."""
+    # Interactive mode: prompt user for selections
+    if interactive:
+        console.print("\n[bold]🚀 Interactive Training Mode[/bold]")
+
+        model_type = select_option(
+            "Select model type:",
+            ModelFactory.list_available(),
+            default=model_type,
+        )
+
+        preprocessing = select_option(
+            "Select preprocessing strategy:",
+            PreprocessorFactory.list_available(),
+            default=preprocessing,
+        )
+
+        console.print()
+
     # Show configuration
     config = {
         "Model": model_type,

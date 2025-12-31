@@ -2,9 +2,51 @@
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Prompt
 from rich.table import Table
 
 console = Console()
+
+
+def select_option(prompt: str, options: list[str], default: str | None = None) -> str:
+    """Display an interactive menu and return the selected option.
+
+    Args:
+        prompt: The question to ask
+        options: List of available options
+        default: Default option (will be highlighted)
+
+    Returns:
+        The selected option string
+    """
+    console.print(f"\n[bold cyan]{prompt}[/bold cyan]")
+
+    for i, option in enumerate(options, 1):
+        if option == default:
+            console.print(f"  [bold green]{i}.[/bold green] {option} [dim](default)[/dim]")
+        else:
+            console.print(f"  [dim]{i}.[/dim] {option}")
+
+    while True:
+        choice = Prompt.ask(
+            "\nSelect option",
+            default=str(options.index(default) + 1) if default else "1",
+        )
+
+        # Handle numeric input
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                selected = options[idx]
+                console.print(f"[green]✓[/green] Selected: [bold]{selected}[/bold]")
+                return selected
+
+        # Handle text input (exact match)
+        if choice in options:
+            console.print(f"[green]✓[/green] Selected: [bold]{choice}[/bold]")
+            return choice
+
+        console.print(f"[red]Invalid choice. Enter 1-{len(options)} or option name.[/red]")
 
 
 def create_metrics_table(

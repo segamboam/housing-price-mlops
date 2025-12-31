@@ -13,6 +13,7 @@ class PreprocessingStrategy(str, Enum):
     V1_MEDIAN = "v1_median"
     V2_KNN = "v2_knn"
     V3_ITERATIVE = "v3_iterative"
+    V4_ROBUST_COL = "v4_robust_col"
 
 
 class PreprocessorFactory:

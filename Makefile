@@ -33,7 +33,7 @@ MLFLOW_PORT := 5000
 
 # Models & Preprocessing strategies
 MODELS := random_forest gradient_boost xgboost linear
-PREPROCESSINGS := v1_median v2_knn v3_iterative
+PREPROCESSINGS := v1_median v2_knn v3_iterative v4_robust_col
 DEFAULT_MODEL := random_forest
 DEFAULT_PREPROC := v1_median
 
@@ -84,6 +84,9 @@ setup: install-dev ## Complete setup: install deps + create directories
 #==============================================================================
 train: ## Train model with default settings
 	$(PYTHON) $(TRAIN_SCRIPT)
+
+train-i: ## Train model interactively (select model and preprocessing)
+	$(CLI) train --interactive
 
 train-rf: ## Train Random Forest model
 	$(CLI) train --model-type random_forest --preprocessing $(DEFAULT_PREPROC)
