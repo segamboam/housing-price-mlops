@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # MLflow Settings
     mlflow_tracking_uri: str | None = None
     mlflow_model_name: str = "housing-price-model"
-    mlflow_model_alias: str = "champion"
+    mlflow_model_alias: str = "production"
 
     # Prometheus Settings
     metrics_enabled: bool = True

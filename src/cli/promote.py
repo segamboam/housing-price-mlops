@@ -1,4 +1,4 @@
-"""CLI command to promote a model to champion."""
+"""CLI command to promote a model to production."""
 
 from datetime import datetime
 
@@ -46,10 +46,10 @@ def promote(
         help="Model version to promote",
     ),
     alias: str = typer.Option(
-        "champion",
+        "production",
         "--alias",
         "-a",
-        help="Alias to assign (default: champion)",
+        help="Alias to assign (default: production)",
     ),
     model_name: str = typer.Option(
         "housing-price-model",
@@ -69,7 +69,7 @@ def promote(
         help="List all model versions",
     ),
 ) -> None:
-    """Promote a model version to champion (or other alias)."""
+    """Promote a model version to production (or other alias)."""
     uri = tracking_uri or str(settings.mlflow_tracking_uri)
     mlflow.set_tracking_uri(uri)
     client = MlflowClient()
@@ -97,20 +97,20 @@ def promote(
         # Verify version exists
         client.get_model_version(model_name, version)
 
-        # Find current champion
-        current_champion = None
+        # Find current production model
+        current_production = None
         for v in versions:
             if alias in v.get("aliases", []):
-                current_champion = v
+                current_production = v
                 break
 
         # Show what will change
         console.print(f"[bold]Promoting version {version} to '{alias}'[/bold]\n")
 
-        if current_champion:
+        if current_production:
             console.print(
-                f"[yellow]Current {alias}:[/yellow] v{current_champion['version']} "
-                f"(run: {current_champion['run_id'][:8]})"
+                f"[yellow]Current {alias}:[/yellow] v{current_production['version']} "
+                f"(run: {current_production['run_id'][:8]})"
             )
         console.print(f"[green]New {alias}:[/green] v{version}\n")
 

@@ -135,7 +135,7 @@ def create_versions_table(versions: list[dict]) -> Table:
 
     for v in versions:
         aliases = ", ".join(v.get("aliases", [])) or "-"
-        style = "bold green" if "champion" in v.get("aliases", []) else None
+        style = "bold green" if "production" in v.get("aliases", []) else None
         table.add_row(
             str(v.get("version", "")),
             aliases,

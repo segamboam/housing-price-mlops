@@ -60,32 +60,44 @@ def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
         return None, None
 
 
-def load_model_from_mlflow():
-    """Load model from MLflow Registry (legacy fallback)."""
+def load_bundle_from_mlflow() -> tuple[MLArtifactBundle | None, str | None]:
+    """Load artifact bundle from MLflow Registry (production alias).
+
+    This downloads the complete artifact bundle (model + preprocessor + metadata)
+    from the MLflow run associated with the 'production' model version.
+    """
+    import tempfile
+
     import mlflow
+    from mlflow import MlflowClient
 
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    model_uri = f"models:/{settings.mlflow_model_name}@{settings.mlflow_model_alias}"
+    client = MlflowClient()
 
     try:
-        loaded_model = mlflow.sklearn.load_model(model_uri)
-        print(f"Model loaded from MLflow Registry: {model_uri}")
-        record_model_load("success", "mlflow")
-        return loaded_model, "mlflow"
-    except Exception as e:
-        print(f"Failed to load model with alias '{settings.mlflow_model_alias}': {e}")
-        record_model_load("failure", "mlflow")
-        # Fallback to latest version
-        try:
-            model_uri = f"models:/{settings.mlflow_model_name}/latest"
-            loaded_model = mlflow.sklearn.load_model(model_uri)
-            print(f"Model loaded from MLflow Registry (latest): {model_uri}")
+        # Get the model version with the production alias
+        model_version = client.get_model_version_by_alias(
+            settings.mlflow_model_name,
+            settings.mlflow_model_alias
+        )
+        run_id = model_version.run_id
+        version = model_version.version
+        print(f"Found {settings.mlflow_model_alias} model: version {version}, run {run_id[:8]}")
+
+        # Download artifact bundle from the run
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = client.download_artifacts(run_id, "artifact_bundle", tmp_dir)
+            bundle = MLArtifactBundle.load(artifact_path)
+            print(f"Artifact bundle loaded from MLflow run {run_id[:8]}")
+            print(f"  Model type: {bundle.metadata.model_type}")
+            print(f"  Preprocessing: {bundle.metadata.preprocessing_strategy}")
             record_model_load("success", "mlflow")
-            return loaded_model, "mlflow"
-        except Exception as e2:
-            print(f"Failed to load latest model from MLflow: {e2}")
-            record_model_load("failure", "mlflow")
-            return None, None
+            return bundle, "mlflow"
+
+    except Exception as e:
+        print(f"Failed to load bundle from MLflow ({settings.mlflow_model_alias}): {e}")
+        record_model_load("failure", "mlflow")
+        return None, None
 
 
 def load_legacy_local_model():
@@ -104,23 +116,27 @@ def load_legacy_local_model():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model on startup."""
+    """Load model on startup.
+
+    Priority order:
+    1. MLflow Registry (production alias) - downloads complete artifact bundle
+    2. Local artifact bundle (fallback)
+    3. Legacy local files (model.joblib + scaler.joblib)
+    """
     global artifact_bundle, model_source, legacy_model, legacy_scaler
 
-    # Priority 1: Try to load artifact bundle (preferred)
-    print("Attempting to load artifact bundle...")
-    artifact_bundle, model_source = load_artifact_bundle()
+    # Priority 1: Try MLflow Registry - download artifact bundle from production model
+    if settings.mlflow_tracking_uri:
+        print(f"Attempting to load from MLflow ({settings.mlflow_model_alias}): {settings.mlflow_tracking_uri}")
+        artifact_bundle, model_source = load_bundle_from_mlflow()
 
-    # Priority 2: Try MLflow if bundle not available
-    if artifact_bundle is None and settings.mlflow_tracking_uri:
-        print(f"Attempting to load model from MLflow: {settings.mlflow_tracking_uri}")
-        legacy_model, model_source = load_model_from_mlflow()
-        if legacy_model and settings.scaler_path.exists():
-            legacy_scaler = load_scaler(settings.scaler_path)
-            print(f"Scaler loaded from {settings.scaler_path}")
+    # Priority 2: Fallback to local artifact bundle
+    if artifact_bundle is None:
+        print("Attempting to load local artifact bundle (fallback)...")
+        artifact_bundle, model_source = load_artifact_bundle()
 
     # Priority 3: Fallback to legacy local files
-    if artifact_bundle is None and legacy_model is None:
+    if artifact_bundle is None:
         print("Attempting to load legacy model files...")
         legacy_model, legacy_scaler, model_source = load_legacy_local_model()
 
@@ -215,12 +231,12 @@ async def model_info():
     """Obtener información detallada del modelo activo.
 
     Incluye métricas, feature importance, y metadata de MLflow.
-    Solo disponible cuando se usa el formato artifact bundle.
+    Nota: Si se usa MLflow para predicciones, la metadata viene del artifact bundle local.
     """
     if artifact_bundle is None:
         raise HTTPException(
             status_code=503,
-            detail="Model info solo disponible con artifact bundle. Modelo legacy cargado.",
+            detail="Model info no disponible. No se encontró artifact bundle.",
         )
 
     metadata = artifact_bundle.metadata
@@ -238,6 +254,7 @@ async def model_info():
         mlflow_run_id=metadata.mlflow_run_id,
         mlflow_experiment=metadata.mlflow_experiment_name,
         created_at=metadata.created_at.isoformat() if metadata.created_at else None,
+        prediction_source=model_source,
     )
 
 

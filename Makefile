@@ -137,7 +137,7 @@ experiment-all: ## Run full grid: all models x all preprocessing strategies
 promote-list: ## List all model versions with their aliases
 	$(CLI) promote --list
 
-promote: ## Promote a model version to champion. Usage: make promote VERSION=4
+promote: ## Promote a model version to production. Usage: make promote VERSION=4
 ifndef VERSION
 	@echo "Error: VERSION is required. Usage: make promote VERSION=4"
 	@exit 1

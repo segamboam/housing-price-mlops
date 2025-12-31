@@ -186,6 +186,9 @@ class ModelInfoResponse(BaseModel):
     mlflow_run_id: str | None = Field(None, description="ID del run en MLflow")
     mlflow_experiment: str | None = Field(None, description="Nombre del experimento en MLflow")
     created_at: str | None = Field(None, description="Fecha de creación del modelo (ISO format)")
+    prediction_source: str | None = Field(
+        None, description="Fuente del modelo para predicciones (mlflow/bundle/local)"
+    )
 
 
 class ErrorResponse(BaseModel):
