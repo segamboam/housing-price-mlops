@@ -1,5 +1,7 @@
 """Pytest fixtures for testing."""
 
+from unittest.mock import MagicMock
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -73,3 +75,26 @@ def feature_stats() -> dict:
         "B": {"min": 0.32, "max": 396.9},
         "LSTAT": {"min": 1.73, "max": 37.97},
     }
+
+
+@pytest.fixture
+def mock_artifact_bundle(monkeypatch):
+    """Mock del artifact_bundle para tests de API sin modelo real.
+
+    Also disables API key authentication for testing.
+    """
+    # Disable API key requirement by patching the settings object in security module
+    monkeypatch.setattr("src.api.security.settings.api_key", None)
+
+    # Mock the artifact bundle
+    mock_metadata = MagicMock()
+    mock_metadata.model_type = "mock_model"
+    mock_metadata.artifact_id = "test-mock-12345678"
+    mock_metadata.feature_stats = {}
+
+    mock_bundle = MagicMock()
+    mock_bundle.predict.return_value = np.array([25.5])
+    mock_bundle.metadata = mock_metadata
+
+    monkeypatch.setattr("src.api.main.artifact_bundle", mock_bundle)
+    return mock_bundle

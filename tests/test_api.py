@@ -46,28 +46,48 @@ class TestRootEndpoint:
 class TestPredictEndpoint:
     """Tests for /predict endpoint."""
 
-    def test_predict_with_valid_input(self, client, sample_features_dict):
-        """Predict returns prediction for valid input."""
-        response = client.post("/predict", json=sample_features_dict)
+    def test_predict_with_valid_input_and_model(self, sample_features_dict, mock_artifact_bundle):
+        """Predict returns 200 with prediction when model is loaded."""
+        from fastapi.testclient import TestClient
 
-        # May return 503 if no model loaded, or 401 if API key required
-        if response.status_code == 200:
-            data = response.json()
-            assert "prediction" in data
-            assert "prediction_formatted" in data
-            assert isinstance(data["prediction"], float)
-        else:
-            # 503 = no model, 401 = API key required (both acceptable in test env)
-            assert response.status_code in [401, 503]
+        from src.api.main import app
 
-    def test_predict_with_invalid_input_returns_error(self, client):
-        """Predict returns error for invalid input."""
-        invalid_data = {"CRIM": "not_a_number"}  # Wrong type
+        with TestClient(app) as client:
+            response = client.post("/predict", json=sample_features_dict)
 
-        response = client.post("/predict", json=invalid_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert "prediction" in data
+        assert "prediction_formatted" in data
+        assert isinstance(data["prediction"], float)
+        # Prediction should be a reasonable house price (in $1000s)
+        assert 5.0 < data["prediction"] < 100.0
 
-        # 422 = validation error, 401 = API key checked first
-        assert response.status_code in [401, 422]
+    def test_predict_with_invalid_input_returns_422(self, mock_artifact_bundle):
+        """Predict returns 422 for invalid input types."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        invalid_data = {"CRIM": "not_a_number"}
+
+        with TestClient(app) as client:
+            response = client.post("/predict", json=invalid_data)
+
+        assert response.status_code == 422
+
+    def test_predict_with_missing_fields_returns_422(self, mock_artifact_bundle):
+        """Predict returns 422 when required fields are missing."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        incomplete_data = {"CRIM": 0.1, "ZN": 18.0}  # Missing 11 fields
+
+        with TestClient(app) as client:
+            response = client.post("/predict", json=incomplete_data)
+
+        assert response.status_code == 422
 
 
 class TestFeatureRangeChecking:
