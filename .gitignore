@@ -26,4 +26,6 @@ CHECKLIST.md
 .coverage
 PLAN_MLOPS.md
 
+*.docx
+
 
