@@ -3,18 +3,18 @@
 import hashlib
 from pathlib import Path
 
+import mlflow.sklearn
 import pandas as pd
 import typer
+from mlflow.models import infer_signature
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from sklearn.model_selection import train_test_split
 
 import mlflow
-import mlflow.sklearn
 
 # Import strategies to register them
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
-from mlflow.models import infer_signature
 from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,

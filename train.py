@@ -10,17 +10,17 @@ import hashlib
 import os
 from pathlib import Path
 
+import mlflow.sklearn
 import numpy as np
 import pandas as pd
+from mlflow.models import infer_signature
 from sklearn.model_selection import train_test_split
 
 import mlflow
-import mlflow.sklearn
 import src.data.preprocessing.strategies  # noqa: F401
 
 # Import strategies to register them
 import src.models.strategies  # noqa: F401
-from mlflow.models import infer_signature
 from src.artifacts.bundle import MLArtifactBundle
 from src.data.loader import get_data_summary, load_housing_data
 from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
