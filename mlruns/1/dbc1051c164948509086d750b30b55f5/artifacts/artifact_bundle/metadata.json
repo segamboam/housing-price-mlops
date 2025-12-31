@@ -1,0 +1,67 @@
+{
+  "artifact_id": "436be814-4c93-462b-8bea-11816aa026df",
+  "created_at": "2025-12-30T21:05:08.953313",
+  "model_type": "gradient_boost",
+  "model_params": {
+    "n_estimators": 150,
+    "max_depth": 5,
+    "learning_rate": 0.1,
+    "min_samples_split": 6,
+    "min_samples_leaf": 3,
+    "subsample": 0.8,
+    "random_state": 42
+  },
+  "preprocessing_strategy": "v2_knn",
+  "preprocessing_version": "1.0.0",
+  "feature_names": [
+    "CRIM",
+    "ZN",
+    "INDUS",
+    "CHAS",
+    "NOX",
+    "RM",
+    "AGE",
+    "DIS",
+    "RAD",
+    "TAX",
+    "PTRATIO",
+    "B",
+    "LSTAT"
+  ],
+  "target_name": "MEDV",
+  "training_samples": 404,
+  "test_samples": 102,
+  "random_state": 42,
+  "train_metrics": {
+    "rmse": 0.3481,
+    "mae": 0.2652,
+    "r2": 0.9986
+  },
+  "test_metrics": {
+    "rmse": 2.388,
+    "mae": 1.743,
+    "r2": 0.9222
+  },
+  "feature_importance": {
+    "RM": 0.4659949163701699,
+    "LSTAT": 0.31756157646343636,
+    "DIS": 0.06198762992839255,
+    "CRIM": 0.04121220095075359,
+    "PTRATIO": 0.027460307939320344,
+    "TAX": 0.020582473142933762,
+    "AGE": 0.019704181700747978,
+    "NOX": 0.017660042642223372,
+    "B": 0.01638654120036158,
+    "RAD": 0.005451516918235875,
+    "INDUS": 0.004263469952446231,
+    "CHAS": 0.001260257282214337,
+    "ZN": 0.0004748855087642251
+  },
+  "mlflow_run_id": "dbc1051c164948509086d750b30b55f5",
+  "mlflow_experiment_name": "housing-price-prediction",
+  "artifact_version": "1.0.0",
+  "framework_versions": {
+    "scikit-learn": "1.8.0",
+    "python": "3.12.3"
+  }
+}

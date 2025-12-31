@@ -17,6 +17,7 @@ Sistema MLOps para predicción de precios de viviendas mediante API REST, implem
 - [Monitoreo](#monitoreo)
 - [CI/CD](#cicd)
 - [Decisiones Técnicas](#decisiones-técnicas)
+- [Nota sobre Archivos Incluidos](#nota-sobre-archivos-incluidos)
 - [Posibles Mejoras](#posibles-mejoras)
 - [Uso de Herramientas AI](#uso-de-herramientas-ai)
 
@@ -468,6 +469,17 @@ make ci
 - Usuario no-root en contenedor Docker
 - Validación exhaustiva de inputs con Pydantic
 - Sin exposición de información sensible en errores
+
+---
+
+## Nota sobre Archivos Incluidos
+
+> **⚠️ Para evaluación de la prueba técnica:** Los archivos `mlflow.db`, `mlruns/` y `models/` están incluidos en el repositorio para que el proyecto funcione **out-of-the-box** al clonarlo, sin necesidad de entrenar primero.
+>
+> **En un ambiente de producción real**, estos archivos **NO deberían versionarse** en Git:
+> - `mlflow.db` → Base de datos en almacenamiento persistente (PostgreSQL, MySQL)
+> - `mlruns/` → Almacenamiento de artefactos en S3, GCS, o MinIO
+> - `models/*.joblib` → Servidos desde MLflow Model Registry o almacenamiento de artefactos
 
 ---
 

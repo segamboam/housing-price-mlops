@@ -15,8 +15,11 @@ wheels/
 .env
 
 # MLflow
-mlflow.db
-mlruns/
+# NOTA: mlflow.db y mlruns/ están incluidos en el repo para facilitar la evaluación
+# de la prueba técnica (demo funcional out-of-the-box).
+# En un ambiente real de producción, estos archivos NO deberían versionarse:
+# mlflow.db
+# mlruns/
 
 *.pdf
 
