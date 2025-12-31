@@ -17,9 +17,9 @@ from mlflow.models import infer_signature
 from sklearn.model_selection import train_test_split
 
 import mlflow
-import src.data.preprocessing.strategies  # noqa: F401
 
 # Import strategies to register them
+import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.data.loader import get_data_summary, load_housing_data
