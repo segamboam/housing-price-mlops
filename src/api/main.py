@@ -77,8 +77,7 @@ def load_bundle_from_mlflow() -> tuple[MLArtifactBundle | None, str | None]:
     try:
         # Get the model version with the production alias
         model_version = client.get_model_version_by_alias(
-            settings.mlflow_model_name,
-            settings.mlflow_model_alias
+            settings.mlflow_model_name, settings.mlflow_model_alias
         )
         run_id = model_version.run_id
         version = model_version.version
@@ -127,7 +126,9 @@ async def lifespan(app: FastAPI):
 
     # Priority 1: Try MLflow Registry - download artifact bundle from production model
     if settings.mlflow_tracking_uri:
-        print(f"Attempting to load from MLflow ({settings.mlflow_model_alias}): {settings.mlflow_tracking_uri}")
+        print(
+            f"Attempting to load from MLflow ({settings.mlflow_model_alias}): {settings.mlflow_tracking_uri}"
+        )
         artifact_bundle, model_source = load_bundle_from_mlflow()
 
     # Priority 2: Fallback to local artifact bundle

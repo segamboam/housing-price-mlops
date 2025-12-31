@@ -10,8 +10,18 @@ from src.data.preprocessing.factory import PreprocessingStrategy, PreprocessorFa
 
 # Feature definitions for Boston Housing dataset
 NUMERIC_FEATURES = [
-    "CRIM", "ZN", "INDUS", "NOX", "RM", "AGE",
-    "DIS", "RAD", "TAX", "PTRATIO", "B", "LSTAT"
+    "CRIM",
+    "ZN",
+    "INDUS",
+    "NOX",
+    "RM",
+    "AGE",
+    "DIS",
+    "RAD",
+    "TAX",
+    "PTRATIO",
+    "B",
+    "LSTAT",
 ]
 CATEGORICAL_FEATURES = ["CHAS"]
 
@@ -43,17 +53,31 @@ class V4RobustColPreprocessor(BasePreprocessor):
     def _build_pipeline(self) -> Pipeline:
         preprocessor = ColumnTransformer(
             transformers=[
-                ("num", Pipeline([
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", RobustScaler()),
-                ]), NUMERIC_FEATURES),
-                ("cat", Pipeline([
-                    ("imputer", SimpleImputer(strategy="most_frequent")),
-                ]), CATEGORICAL_FEATURES),
+                (
+                    "num",
+                    Pipeline(
+                        [
+                            ("imputer", SimpleImputer(strategy="median")),
+                            ("scaler", RobustScaler()),
+                        ]
+                    ),
+                    NUMERIC_FEATURES,
+                ),
+                (
+                    "cat",
+                    Pipeline(
+                        [
+                            ("imputer", SimpleImputer(strategy="most_frequent")),
+                        ]
+                    ),
+                    CATEGORICAL_FEATURES,
+                ),
             ],
             remainder="passthrough",
         )
 
-        return Pipeline([
-            ("preprocessor", preprocessor),
-        ])
+        return Pipeline(
+            [
+                ("preprocessor", preprocessor),
+            ]
+        )
