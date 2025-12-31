@@ -13,7 +13,7 @@ PYTEST := uv run pytest
 RUFF := uv run ruff
 UVICORN := uv run uvicorn
 MLFLOW := uv run mlflow
-HOUSING := uv run housing
+CLI := $(PYTHON) -m src.cli.main
 
 # Paths
 SRC := src
@@ -48,7 +48,7 @@ DEFAULT_PREPROC := v1_median
 .PHONY: help install install-dev setup \
         train train-rf train-gb train-xgb train-linear \
         experiment experiment-all experiment-models experiment-preproc \
-        cli-train cli-info cli-runs cli-promote \
+        promote-list promote \
         api api-prod mlflow \
         docker-build docker-up docker-dev docker-down docker-logs docker-mlflow docker-clean \
         test test-cov coverage lint format format-check lint-fix \
@@ -72,7 +72,7 @@ install: ## Install production dependencies
 	uv sync --no-dev
 
 install-dev: ## Install all dependencies (including dev)
-	uv sync
+	uv sync --extra dev
 
 setup: install-dev ## Complete setup: install deps + create directories
 	@mkdir -p models
@@ -86,16 +86,16 @@ train: ## Train model with default settings
 	$(PYTHON) $(TRAIN_SCRIPT)
 
 train-rf: ## Train Random Forest model
-	$(HOUSING) train --model-type random_forest --preprocessing $(DEFAULT_PREPROC)
+	$(CLI) train --model-type random_forest --preprocessing $(DEFAULT_PREPROC)
 
 train-gb: ## Train Gradient Boost model
-	$(HOUSING) train --model-type gradient_boost --preprocessing $(DEFAULT_PREPROC)
+	$(CLI) train --model-type gradient_boost --preprocessing $(DEFAULT_PREPROC)
 
 train-xgb: ## Train XGBoost model
-	$(HOUSING) train --model-type xgboost --preprocessing $(DEFAULT_PREPROC)
+	$(CLI) train --model-type xgboost --preprocessing $(DEFAULT_PREPROC)
 
 train-linear: ## Train Linear Regression model
-	$(HOUSING) train --model-type linear --preprocessing $(DEFAULT_PREPROC)
+	$(CLI) train --model-type linear --preprocessing $(DEFAULT_PREPROC)
 
 #==============================================================================
 # EXPERIMENTS (Grid Search)
@@ -106,7 +106,7 @@ experiment-models: ## Compare all models with default preprocessing
 	@echo "Running experiments with all models..."
 	@for model in $(MODELS); do \
 		echo "\n========== Training $$model =========="; \
-		$(HOUSING) train --model-type $$model --preprocessing $(DEFAULT_PREPROC) --register; \
+		$(CLI) train --model-type $$model --preprocessing $(DEFAULT_PREPROC) --register; \
 	done
 	@echo "\nAll experiments complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
 
@@ -114,7 +114,7 @@ experiment-preproc: ## Compare all preprocessing strategies with default model
 	@echo "Running experiments with all preprocessing strategies..."
 	@for preproc in $(PREPROCESSINGS); do \
 		echo "\n========== Training with $$preproc =========="; \
-		$(HOUSING) train --model-type $(DEFAULT_MODEL) --preprocessing $$preproc --register; \
+		$(CLI) train --model-type $(DEFAULT_MODEL) --preprocessing $$preproc --register; \
 	done
 	@echo "\nAll experiments complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
 
@@ -123,25 +123,23 @@ experiment-all: ## Run full grid: all models x all preprocessing strategies
 	@for model in $(MODELS); do \
 		for preproc in $(PREPROCESSINGS); do \
 			echo "\n========== $$model + $$preproc =========="; \
-			$(HOUSING) train --model-type $$model --preprocessing $$preproc --register; \
+			$(CLI) train --model-type $$model --preprocessing $$preproc --register; \
 		done; \
 	done
 	@echo "\nFull grid complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
 
 #==============================================================================
-# CLI COMMANDS
+# MODEL PROMOTION
 #==============================================================================
-cli-train: ## Train model interactively via CLI
-	$(HOUSING) train
+promote-list: ## List all model versions with their aliases
+	$(CLI) promote --list
 
-cli-info: ## Show current model information
-	$(HOUSING) info
-
-cli-runs: ## List MLflow experiment runs
-	$(HOUSING) runs
-
-cli-promote: ## List model versions for promotion
-	$(HOUSING) promote --list
+promote: ## Promote a model version to champion. Usage: make promote VERSION=4
+ifndef VERSION
+	@echo "Error: VERSION is required. Usage: make promote VERSION=4"
+	@exit 1
+endif
+	$(CLI) promote --version $(VERSION)
 
 #==============================================================================
 # API & SERVICES
@@ -239,10 +237,10 @@ demo: ## Run demo flow: train -> show info
 	@echo "=== DEMO: Housing Price Prediction ==="
 	@echo ""
 	@echo "1. Training model..."
-	$(HOUSING) train --model-type random_forest --preprocessing v1_median --register
+	$(CLI) train --model-type random_forest --preprocessing v1_median --register
 	@echo ""
 	@echo "2. Model info:"
-	$(HOUSING) info
+	$(CLI) info
 	@echo ""
 	@echo "3. To start the API, run: make api"
 	@echo "4. Then test with: make demo-predict"

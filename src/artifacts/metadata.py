@@ -1,6 +1,6 @@
 """Artifact metadata schema for ML bundles."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ class ArtifactMetadata(BaseModel):
     # Identifiers
     artifact_id: str = Field(description="Unique artifact identifier (UUID)")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(UTC),
         description="Timestamp when artifact was created",
     )
 

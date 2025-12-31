@@ -23,6 +23,11 @@ USER appuser
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser models/ ./models/
 
+# Copy MLflow data for demo purposes (pre-trained experiments)
+# NOTE: In production, MLflow data should NOT be in the image
+COPY --chown=appuser:appuser mlflow.db ./mlflow.db
+COPY --chown=appuser:appuser mlruns/ ./mlruns/
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

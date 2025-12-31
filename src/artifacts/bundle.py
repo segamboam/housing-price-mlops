@@ -3,7 +3,7 @@
 import json
 import sys
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +91,7 @@ class MLArtifactBundle:
         """
         metadata = ArtifactMetadata(
             artifact_id=str(uuid.uuid4()),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             model_type=model.name,
             model_params=model_params or model.params,
             preprocessing_strategy=preprocessor.name,
