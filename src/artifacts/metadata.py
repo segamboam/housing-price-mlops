@@ -68,11 +68,15 @@ class ArtifactMetadata(BaseModel):
     # Metrics
     train_metrics: dict[str, float] = Field(
         default_factory=dict,
-        description="Metrics on training set (rmse, mae, r2)",
+        description="Metrics on training set (rmse, mae, r2, mape, accuracy_within_10pct)",
     )
     test_metrics: dict[str, float] = Field(
         default_factory=dict,
-        description="Metrics on test set (rmse, mae, r2)",
+        description="Metrics on test set (rmse, mae, r2, mape, accuracy_within_10pct)",
+    )
+    cv_metrics: dict[str, float] = Field(
+        default_factory=dict,
+        description="Cross-validation metrics (cv_rmse_mean, cv_rmse_std, cv_r2_mean, cv_r2_std)",
     )
     feature_importance: dict[str, float] = Field(
         default_factory=dict,

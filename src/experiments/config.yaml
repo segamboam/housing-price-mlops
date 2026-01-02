@@ -1,0 +1,37 @@
+# Experiment Configuration
+# Run with: make experiment-yaml
+
+experiment:
+  name: "housing-tuning"
+  description: "Grid search over models, preprocessors and hyperparameters"
+
+# Grid configuration - only include what you want to test
+grid:
+  # Models to evaluate (available: random_forest, gradient_boost, xgboost, linear)
+  models:
+    - random_forest
+    - gradient_boost
+
+  # Preprocessing strategies (available: v1_median, v2_knn, v3_iterative, v4_robust_col)
+  preprocessors:
+    - v1_median
+    - v2_knn
+
+  # Hyperparameters per model (optional - uses defaults if not specified)
+  hyperparameters:
+    random_forest:
+      n_estimators: [100, 200]
+      max_depth: [10, 15]
+    gradient_boost:
+      n_estimators: [100, 150]
+      learning_rate: [0.05, 0.1]
+      max_depth: [3, 5]
+
+# General settings
+settings:
+  data_path: "data/HousingData.csv"
+  test_size: 0.2
+  random_state: 42
+  enable_cv: true
+  cv_splits: 5
+  register_models: false  # Set to true to register all models in MLflow

@@ -16,6 +16,10 @@ Sistema MLOps para predicción de precios de viviendas mediante API REST, implem
 - [Endpoints de la API](#endpoints-de-la-api)
 - [Monitoreo](#monitoreo)
 - [CI/CD](#cicd)
+- [Machine Learning](#machine-learning)
+  - [Experimentación y Evaluación](#experimentación-y-evaluación)
+  - [Entrenamiento Interactivo](#entrenamiento-interactivo)
+  - [Promoción de Modelos](#promoción-de-modelos)
 - [Decisiones Técnicas](#decisiones-técnicas)
 - [Nota sobre Archivos Incluidos](#nota-sobre-archivos-incluidos)
 - [Posibles Mejoras](#posibles-mejoras)
@@ -99,12 +103,18 @@ meli_challenge/
 │   ├── models/                 # Modelos ML (Strategy Pattern)
 │   │   ├── base.py             # Clase base abstracta
 │   │   ├── factory.py          # Factory con registro
-│   │   ├── evaluate.py         # Métricas de evaluación
+│   │   ├── evaluate.py         # Métricas de evaluación (RMSE, MAE, R², MAPE)
+│   │   ├── cross_validation.py # K-Fold CV y learning curves
 │   │   └── strategies/         # Implementaciones
 │   │       ├── random_forest.py
 │   │       ├── gradient_boost.py
 │   │       ├── xgboost_model.py
 │   │       └── linear.py
+│   │
+│   ├── experiments/            # Sistema de experimentación
+│   │   ├── runner.py           # Ejecutor de grid search desde YAML
+│   │   ├── train_experiment.py # Entrenamiento individual
+│   │   └── config.yaml         # Configuración YAML de ejemplo
 │   │
 │   ├── data/                   # Carga y preprocesamiento
 │   │   ├── loader.py           # Carga y validación
@@ -129,6 +139,10 @@ meli_challenge/
 ├── models/                     # Modelos entrenados
 │   ├── artifact_bundle/        # Bundle principal
 │   └── plots/                  # Visualizaciones
+│
+├── scripts/                    # Scripts utilitarios
+│   ├── run_experiment.py       # CLI para experimentos
+│   └── seed_mlflow.py          # Seed de MLflow
 │
 ├── train.py                    # Script principal de entrenamiento
 ├── Dockerfile                  # Imagen Docker
@@ -449,6 +463,106 @@ make test-cov
 
 # Pipeline completo
 make ci
+```
+
+---
+
+## Machine Learning
+
+### Experimentación y Evaluación
+
+El proyecto incluye un sistema de experimentación integrado con MLflow:
+
+```bash
+# Ejecutar experimentos desde configuración YAML
+make experiment-yaml
+
+# Entrenamiento con cross-validation
+make train-cv
+
+# Ver y comparar resultados en MLflow UI
+open http://localhost:5000
+```
+
+**Nota:** Todos los resultados se loggean a MLflow. Usa la UI de MLflow para:
+- Comparar runs (seleccionar múltiples → Compare)
+- Visualizar métricas y gráficos
+- Revisar parámetros e hiperparámetros
+- Descargar artefactos
+
+#### Métricas de Evaluación
+
+| Métrica | Descripción | Uso |
+|---------|-------------|-----|
+| **RMSE** | Root Mean Squared Error | Métrica principal de optimización |
+| **MAE** | Mean Absolute Error | Error promedio en unidades originales |
+| **R²** | Coeficiente de determinación | Varianza explicada (0-1) |
+| **MAPE** | Mean Absolute Percentage Error | Error relativo porcentual |
+| **Accuracy@10%** | % predicciones dentro de ±10% | Métrica de negocio |
+
+#### Cross-Validation
+
+```bash
+# Entrenar con 5-fold cross-validation
+uv run meli train --model-type random_forest --cv --cv-splits 5
+```
+
+Resultados típicos de CV:
+```
+CV Results (5-fold):
+  RMSE: 3.21 ± 0.45
+  R²:   0.87 ± 0.05
+```
+
+#### Configuración de Experimentos (YAML)
+
+Los experimentos se configuran mediante archivos YAML en `experiments/`:
+
+```yaml
+experiment:
+  name: "housing-tuning"
+  description: "Tuning de modelos seleccionados"
+
+grid:
+  models:
+    - random_forest
+    - gradient_boost
+  preprocessors:
+    - v1_median
+    - v2_knn
+  hyperparameters:
+    random_forest:
+      n_estimators: [100, 200]
+      max_depth: [10, 15]
+
+settings:
+  enable_cv: true
+  cv_splits: 5
+```
+
+### Entrenamiento Interactivo
+
+```bash
+# Modo interactivo con selección de hiperparámetros
+make train-i
+```
+
+El modo interactivo permite:
+1. Seleccionar modelo y preprocesador
+2. Configurar hiperparámetros manualmente
+3. Habilitar cross-validation
+4. Decidir si registrar en MLflow
+
+### Promoción de Modelos
+
+Sistema champion/challenger para gestión de modelos en producción:
+
+```bash
+# Ver versiones disponibles
+make promote-list
+
+# Promover versión a producción
+make promote VERSION=4
 ```
 
 ---

@@ -16,10 +16,13 @@ from mlflow.models import infer_signature
 from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,
+    confirm_action,
     console,
+    create_cv_results_table,
     create_feature_importance_table,
     create_metrics_table,
     error_panel,
+    select_hyperparameters,
     select_option,
     success_panel,
 )
@@ -27,6 +30,7 @@ from src.config.settings import get_settings
 from src.data.loader import get_data_summary, load_housing_data
 from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
 from src.data.preprocessing.factory import PreprocessorFactory
+from src.models.cross_validation import CVResult, perform_cross_validation
 from src.models.evaluate import evaluate_model, generate_evaluation_report, save_report
 from src.models.factory import ModelFactory
 
@@ -93,9 +97,20 @@ def train(
         "-i",
         help="Interactive mode: select model and preprocessing from menu",
     ),
+    enable_cv: bool = typer.Option(
+        False,
+        "--cv/--no-cv",
+        help="Enable 5-fold cross-validation",
+    ),
+    cv_splits: int = typer.Option(
+        5,
+        "--cv-splits",
+        help="Number of cross-validation folds",
+    ),
 ) -> None:
     """Train a housing price prediction model."""
     # Interactive mode: prompt user for selections
+    custom_hyperparams: dict = {}
     if interactive:
         console.print("\n[bold]🚀 Interactive Training Mode[/bold]")
 
@@ -111,6 +126,14 @@ def train(
             default=preprocessing,
         )
 
+        # Ask if user wants to configure hyperparameters
+        if confirm_action("Configure hyperparameters?", default=False):
+            custom_hyperparams = select_hyperparameters(model_type)
+
+        # Ask if user wants to enable cross-validation
+        if not enable_cv:
+            enable_cv = confirm_action("Enable cross-validation?", default=True)
+
         console.print()
 
     # Show configuration
@@ -121,8 +144,11 @@ def train(
         "Data": str(data_path),
         "Test Size": f"{test_size:.0%}",
         "Random Seed": str(random_state),
+        "Cross-Validation": f"{cv_splits}-fold" if enable_cv else "Disabled",
         "Register": "Yes" if register else "No",
     }
+    if custom_hyperparams:
+        config["Custom Params"] = ", ".join(f"{k}={v}" for k, v in custom_hyperparams.items())
     console.print(config_panel(config, title="Training Configuration"))
     console.print()
 
@@ -202,7 +228,8 @@ def train(
 
             # Create and train model
             model = ModelFactory.create(model_type)
-            model.train(X_train_transformed, y_train.values, random_state=random_state)
+            train_params = {"random_state": random_state, **custom_hyperparams}
+            model.train(X_train_transformed, y_train.values, **train_params)
 
             # Log model params
             mlflow.log_params({f"model_{k}": v for k, v in model.params.items()})
@@ -214,19 +241,41 @@ def train(
             train_result = evaluate_model(model.model, X_train_transformed, y_train.values)
             test_result = evaluate_model(model.model, X_test_transformed, y_test.values)
 
-            # Log metrics
+            # Log metrics (now includes mape and accuracy_within_10pct)
             mlflow.log_metrics(
                 {
                     "train_rmse": train_result["metrics"]["rmse"],
                     "train_mae": train_result["metrics"]["mae"],
                     "train_r2": train_result["metrics"]["r2"],
+                    "train_mape": train_result["metrics"]["mape"],
+                    "train_accuracy_within_10pct": train_result["metrics"]["accuracy_within_10pct"],
                     "test_rmse": test_result["metrics"]["rmse"],
                     "test_mae": test_result["metrics"]["mae"],
                     "test_r2": test_result["metrics"]["r2"],
+                    "test_mape": test_result["metrics"]["mape"],
+                    "test_accuracy_within_10pct": test_result["metrics"]["accuracy_within_10pct"],
                 }
             )
 
             progress.update(task, description="[green]Evaluation complete")
+
+            # Cross-validation (optional)
+            cv_result: CVResult | None = None
+            if enable_cv:
+                progress.update(task, description=f"Running {cv_splits}-fold cross-validation...")
+                cv_result = perform_cross_validation(
+                    model.model,
+                    X_train_transformed,
+                    y_train.values,
+                    n_splits=cv_splits,
+                    random_state=random_state,
+                )
+                # Log CV metrics to MLflow
+                mlflow.log_metrics(cv_result.to_dict())
+                progress.update(
+                    task,
+                    description=f"[green]CV complete: RMSE {cv_result.cv_rmse_mean:.4f} ± {cv_result.cv_rmse_std:.4f}",
+                )
 
             # Get feature importance
             feature_importance = model.get_feature_importance(FEATURE_COLUMNS) or {}
@@ -242,6 +291,7 @@ def train(
                 test_samples=len(y_test),
                 train_metrics=train_result["metrics"],
                 test_metrics=test_result["metrics"],
+                cv_metrics=cv_result.to_dict() if cv_result else {},
                 feature_importance=feature_importance,
                 feature_stats=feature_stats,
                 mlflow_run_id=run.info.run_id,
@@ -270,28 +320,62 @@ def train(
                 model.model.predict(X_train_transformed[:1]),
             )
 
+            # Log model (without registering yet)
             mlflow.sklearn.log_model(
                 model.model,
                 artifact_path="model",
                 signature=signature,
-                registered_model_name="housing-price-model" if register else None,
             )
 
             progress.update(task, description="[green]Artifacts saved")
+
+            # Store run info for later use
+            run_id = run.info.run_id
 
     # Show results
     console.print()
     console.print(create_metrics_table(train_result["metrics"], test_result["metrics"]))
     console.print()
 
+    if cv_result:
+        console.print(create_cv_results_table(cv_result.to_dict()))
+        console.print()
+
     if feature_importance:
         console.print(create_feature_importance_table(feature_importance))
         console.print()
 
+    # In interactive mode, ask user if they want to register the model
+    should_register = register
+    if interactive:
+        console.print()
+        should_register = confirm_action(
+            "Register this model in MLflow Registry?", default=False
+        )
+
+    # Register model if requested
+    registered_version = None
+    if should_register:
+        model_uri = f"runs:/{run_id}/model"
+        model_name = settings.mlflow_model_name
+
+        # Register the model (no alias - use 'meli promote' to assign production)
+        result = mlflow.register_model(model_uri, model_name)
+        registered_version = result.version
+
+        console.print(
+            f"[green]Model registered as {model_name} v{registered_version}[/green]\n"
+            f"[dim]Use 'uv run meli promote --version {registered_version} --alias production' "
+            f"to promote[/dim]"
+        )
+
     # Success message
-    result_info = f"""[bold]Run ID:[/bold] {run.info.run_id[:8]}...
+    result_info = f"""[bold]Run ID:[/bold] {run_id[:8]}...
 [bold]Artifact ID:[/bold] {bundle.metadata.artifact_id[:8]}...
 [bold]Bundle saved:[/bold] {bundle_path}
 [bold]MLflow UI:[/bold] {effective_tracking_uri}"""
+
+    if registered_version:
+        result_info += f"\n[bold]Registered:[/bold] v{registered_version}"
 
     console.print(success_panel(result_info, title="Training Complete"))

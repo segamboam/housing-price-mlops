@@ -5,24 +5,74 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    """Calculate regression metrics.
+def calculate_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Calculate Mean Absolute Percentage Error.
 
     Args:
         y_true: True target values.
         y_pred: Predicted target values.
 
     Returns:
-        Dictionary with RMSE, MAE, and R2 metrics.
+        MAPE as percentage (0-100). Returns 0 if all true values are zero.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Avoid division by zero - only calculate for non-zero true values
+    mask = y_true != 0
+    if not mask.any():
+        return 0.0
+
+    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
+
+
+def accuracy_within_tolerance(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    tolerance: float = 0.10,
+) -> float:
+    """Calculate percentage of predictions within a tolerance threshold.
+
+    Args:
+        y_true: True target values.
+        y_pred: Predicted target values.
+        tolerance: Allowed relative deviation as fraction (default 10%).
+
+    Returns:
+        Percentage of predictions within tolerance (0-100).
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Use small epsilon to avoid division by zero
+    relative_error = np.abs(y_true - y_pred) / np.maximum(np.abs(y_true), 1e-8)
+    within_tolerance = relative_error <= tolerance
+
+    return float(np.mean(within_tolerance) * 100)
+
+
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    """Calculate regression metrics including business metrics.
+
+    Args:
+        y_true: True target values.
+        y_pred: Predicted target values.
+
+    Returns:
+        Dictionary with RMSE, MAE, R2, MAPE, and accuracy within 10% metrics.
     """
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
+    mape = calculate_mape(y_true, y_pred)
+    acc_10 = accuracy_within_tolerance(y_true, y_pred, tolerance=0.10)
 
     return {
         "rmse": round(rmse, 4),
         "mae": round(mae, 4),
         "r2": round(r2, 4),
+        "mape": round(mape, 4),
+        "accuracy_within_10pct": round(acc_10, 4),
     }
 
 

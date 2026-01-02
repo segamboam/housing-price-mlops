@@ -2,10 +2,23 @@
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 console = Console()
+
+
+def confirm_action(prompt: str, default: bool = False) -> bool:
+    """Ask user for yes/no confirmation.
+
+    Args:
+        prompt: The question to ask
+        default: Default value if user just presses Enter
+
+    Returns:
+        True if user confirmed, False otherwise
+    """
+    return Confirm.ask(f"[bold cyan]{prompt}[/bold cyan]", default=default)
 
 
 def select_option(prompt: str, options: list[str], default: str | None = None) -> str:
@@ -166,3 +179,154 @@ def config_panel(config: dict[str, str], title: str = "Configuration") -> Panel:
     """Create a panel showing configuration."""
     lines = [f"[bold]{k}:[/bold] {v}" for k, v in config.items()]
     return Panel("\n".join(lines), title=title, border_style="cyan")
+
+
+def prompt_integer(
+    prompt: str,
+    default: int,
+    min_val: int | None = None,
+    max_val: int | None = None,
+) -> int:
+    """Prompt user for an integer value with validation.
+
+    Args:
+        prompt: The question to ask
+        default: Default value
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+
+    Returns:
+        The entered integer value
+    """
+    while True:
+        value = Prompt.ask(f"[cyan]{prompt}[/cyan]", default=str(default))
+        try:
+            int_val = int(value)
+            if min_val is not None and int_val < min_val:
+                console.print(f"[red]Value must be >= {min_val}[/red]")
+                continue
+            if max_val is not None and int_val > max_val:
+                console.print(f"[red]Value must be <= {max_val}[/red]")
+                continue
+            return int_val
+        except ValueError:
+            console.print("[red]Please enter a valid integer[/red]")
+
+
+def prompt_float(
+    prompt: str,
+    default: float,
+    min_val: float | None = None,
+    max_val: float | None = None,
+) -> float:
+    """Prompt user for a float value with validation.
+
+    Args:
+        prompt: The question to ask
+        default: Default value
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+
+    Returns:
+        The entered float value
+    """
+    while True:
+        value = Prompt.ask(f"[cyan]{prompt}[/cyan]", default=str(default))
+        try:
+            float_val = float(value)
+            if min_val is not None and float_val < min_val:
+                console.print(f"[red]Value must be >= {min_val}[/red]")
+                continue
+            if max_val is not None and float_val > max_val:
+                console.print(f"[red]Value must be <= {max_val}[/red]")
+                continue
+            return float_val
+        except ValueError:
+            console.print("[red]Please enter a valid number[/red]")
+
+
+# Hyperparameter configurations for interactive mode
+HYPERPARAMETER_CONFIGS: dict[str, dict] = {
+    "random_forest": {
+        "n_estimators": {"default": 100, "min": 10, "max": 500, "type": "int", "desc": "Number of trees"},
+        "max_depth": {"default": 15, "min": 1, "max": 50, "type": "int", "desc": "Maximum tree depth"},
+        "min_samples_split": {"default": 2, "min": 2, "max": 20, "type": "int", "desc": "Min samples to split"},
+        "min_samples_leaf": {"default": 1, "min": 1, "max": 10, "type": "int", "desc": "Min samples per leaf"},
+    },
+    "gradient_boost": {
+        "n_estimators": {"default": 100, "min": 10, "max": 500, "type": "int", "desc": "Number of boosting stages"},
+        "learning_rate": {"default": 0.1, "min": 0.01, "max": 1.0, "type": "float", "desc": "Learning rate"},
+        "max_depth": {"default": 3, "min": 1, "max": 20, "type": "int", "desc": "Maximum tree depth"},
+        "min_samples_split": {"default": 2, "min": 2, "max": 20, "type": "int", "desc": "Min samples to split"},
+    },
+    "xgboost": {
+        "n_estimators": {"default": 100, "min": 10, "max": 500, "type": "int", "desc": "Number of boosting rounds"},
+        "learning_rate": {"default": 0.1, "min": 0.01, "max": 1.0, "type": "float", "desc": "Learning rate (eta)"},
+        "max_depth": {"default": 6, "min": 1, "max": 20, "type": "int", "desc": "Maximum tree depth"},
+        "subsample": {"default": 1.0, "min": 0.5, "max": 1.0, "type": "float", "desc": "Subsample ratio"},
+    },
+    "linear": {
+        # Linear regression has no hyperparameters to tune
+    },
+}
+
+
+def select_hyperparameters(model_type: str) -> dict:
+    """Interactive selection of hyperparameters for a model.
+
+    Args:
+        model_type: The type of model (random_forest, gradient_boost, etc.)
+
+    Returns:
+        Dictionary of hyperparameter name -> value
+    """
+    config = HYPERPARAMETER_CONFIGS.get(model_type, {})
+
+    if not config:
+        console.print(f"[dim]No hyperparameters to configure for {model_type}[/dim]")
+        return {}
+
+    console.print(f"\n[bold]Configure hyperparameters for {model_type}:[/bold]")
+    console.print("[dim]Press Enter to use default values[/dim]\n")
+
+    hyperparams = {}
+    for param_name, param_config in config.items():
+        desc = param_config["desc"]
+        default = param_config["default"]
+        min_val = param_config["min"]
+        max_val = param_config["max"]
+
+        prompt = f"  {param_name} ({desc}) [{min_val}-{max_val}]"
+
+        if param_config["type"] == "int":
+            hyperparams[param_name] = prompt_integer(prompt, default, min_val, max_val)
+        else:
+            hyperparams[param_name] = prompt_float(prompt, default, min_val, max_val)
+
+    console.print()
+    return hyperparams
+
+
+def create_cv_results_table(cv_metrics: dict) -> Table:
+    """Create a Rich table showing cross-validation results.
+
+    Args:
+        cv_metrics: Dictionary with cv_rmse_mean, cv_rmse_std, cv_r2_mean, cv_r2_std
+
+    Returns:
+        Rich Table with CV results
+    """
+    table = Table(title="Cross-Validation Results", show_header=True, header_style="bold cyan")
+    table.add_column("Metric", style="dim")
+    table.add_column("Mean", justify="right")
+    table.add_column("Std", justify="right")
+
+    rmse_mean = cv_metrics.get("cv_rmse_mean", 0)
+    rmse_std = cv_metrics.get("cv_rmse_std", 0)
+    r2_mean = cv_metrics.get("cv_r2_mean", 0)
+    r2_std = cv_metrics.get("cv_r2_std", 0)
+
+    table.add_row("RMSE", f"{rmse_mean:.4f}", f"± {rmse_std:.4f}")
+    table.add_row("R²", f"{r2_mean:.4f}", f"± {r2_std:.4f}")
+
+    return table

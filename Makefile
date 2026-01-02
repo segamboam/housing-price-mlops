@@ -46,8 +46,8 @@ DEFAULT_PREPROC := v1_median
 # Phony targets
 #------------------------------------------------------------------------------
 .PHONY: help install install-dev setup \
-        train train-rf train-gb train-xgb train-linear \
-        experiment experiment-all experiment-models experiment-preproc \
+        train train-rf train-gb train-xgb train-linear train-cv \
+        experiment experiment-all experiment-models experiment-preproc experiment-yaml \
         promote-list promote \
         api api-prod mlflow \
         infra-up infra-down infra-logs infra-clean \
@@ -133,6 +133,12 @@ experiment-all: ## Run full grid: all models x all preprocessing strategies
 		done; \
 	done
 	@echo "\nFull grid complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
+
+experiment-yaml: ## Run experiments from YAML config (results in MLflow UI)
+	$(PYTHON) scripts/run_experiment.py --config src/experiments/config.yaml
+
+train-cv: ## Train with cross-validation enabled
+	$(CLI) train --cv --cv-splits 5
 
 #==============================================================================
 # MODEL PROMOTION
