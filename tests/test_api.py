@@ -289,8 +289,8 @@ class TestModelReloadEndpoint:
         from src.api.main import app
 
         new_mock_metadata = MagicMock()
-        new_mock_metadata.model_type = "staging_model"
-        new_mock_metadata.artifact_id = "staging-12345678"
+        new_mock_metadata.model_type = "reloaded_model"
+        new_mock_metadata.artifact_id = "reloaded-12345678"
 
         new_mock_bundle = MagicMock()
         new_mock_bundle.predict.return_value = np.array([28.0])
@@ -305,11 +305,11 @@ class TestModelReloadEndpoint:
         with TestClient(app) as client:
             # Apply mock after TestClient init (lifespan already ran)
             monkeypatch.setattr("src.api.main.load_bundle_from_mlflow", mock_load)
-            response = client.post("/model/reload", json={"alias": "staging"})
+            response = client.post("/model/reload", json={"alias": "production"})
 
         assert response.status_code == 200
-        # The reload endpoint should have been called with "staging"
-        assert "staging" in captured_alias
+        # The reload endpoint should have been called with "production"
+        assert "production" in captured_alias
 
     def test_reload_failure_keeps_old_model(self, mock_artifact_bundle, monkeypatch):
         """Failed reload keeps existing model."""

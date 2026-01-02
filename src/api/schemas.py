@@ -301,8 +301,8 @@ class ModelReloadRequest(BaseModel):
 
     alias: str | None = Field(
         None,
-        description="Alias de MLflow a cargar (ej: 'production', 'staging'). Usa el default si no se especifica.",
-        json_schema_extra={"example": "staging"},
+        description="Alias de MLflow a cargar. Usa 'production' por defecto si no se especifica.",
+        json_schema_extra={"example": "production"},
     )
 
 
