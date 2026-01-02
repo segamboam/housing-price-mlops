@@ -42,7 +42,6 @@ housing = "src.cli.main:app"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-asyncio_mode = "auto"
 addopts = "-v --tb=short"
 
 [tool.ruff]

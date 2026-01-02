@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class ArtifactMetadata(BaseModel):
@@ -103,6 +103,7 @@ class ArtifactMetadata(BaseModel):
         description="Versions of key frameworks (scikit-learn, python, etc.)",
     )
 
-    model_config = {
-        "json_encoders": {datetime: lambda v: v.isoformat()},
-    }
+    @field_serializer("created_at")
+    def serialize_datetime(self, value: datetime) -> str:
+        """Serialize datetime to ISO format."""
+        return value.isoformat()
