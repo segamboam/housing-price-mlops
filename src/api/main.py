@@ -30,8 +30,12 @@ from src.api.security import verify_api_key
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
 from src.data.loader import FEATURE_COLUMNS
+from src.logging_config import setup_logging
 
 settings = get_settings()
+
+# Initialize logger
+logger = setup_logging(settings.log_level, settings.log_json_format)
 
 # Global state
 artifact_bundle: MLArtifactBundle | None = None
@@ -46,19 +50,21 @@ def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
     bundle_path = settings.artifact_bundle_path
 
     if not bundle_path.exists():
-        print(f"Artifact bundle not found at {bundle_path}")
+        logger.warning("Artifact bundle not found", path=str(bundle_path))
         return None, None
 
     try:
         bundle = MLArtifactBundle.load(bundle_path)
-        print(f"Artifact bundle loaded from {bundle_path}")
-        print(f"  Model type: {bundle.metadata.model_type}")
-        print(f"  Preprocessing: {bundle.metadata.preprocessing_strategy}")
-        print(f"  Artifact ID: {bundle.metadata.artifact_id}")
+        logger.info(
+            "Artifact bundle loaded",
+            source="local",
+            model_type=bundle.metadata.model_type,
+            artifact_id=bundle.metadata.artifact_id[:8],
+        )
         record_model_load("success", "bundle")
         return bundle, "bundle"
     except Exception as e:
-        print(f"Failed to load artifact bundle: {e}")
+        logger.error("Failed to load artifact bundle", error=str(e))
         record_model_load("failure", "bundle")
         return None, None
 
@@ -94,20 +100,24 @@ def load_bundle_from_mlflow(
         )
         run_id = model_version.run_id
         version = model_version.version
-        print(f"Found {effective_alias} model: version {version}, run {run_id[:8]}")
 
         # Download artifact bundle from the run
         with tempfile.TemporaryDirectory() as tmp_dir:
             artifact_path = client.download_artifacts(run_id, "artifact_bundle", tmp_dir)
             bundle = MLArtifactBundle.load(artifact_path)
-            print(f"Artifact bundle loaded from MLflow run {run_id[:8]}")
-            print(f"  Model type: {bundle.metadata.model_type}")
-            print(f"  Preprocessing: {bundle.metadata.preprocessing_strategy}")
+            logger.info(
+                "Artifact bundle loaded",
+                source="mlflow",
+                alias=effective_alias,
+                version=version,
+                run_id=run_id[:8],
+                model_type=bundle.metadata.model_type,
+            )
             record_model_load("success", "mlflow")
             return bundle, "mlflow"
 
     except Exception as e:
-        print(f"Failed to load bundle from MLflow ({effective_alias}): {e}")
+        logger.error("Failed to load from MLflow", alias=effective_alias, error=str(e))
         record_model_load("failure", "mlflow")
         return None, None
 
@@ -122,20 +132,18 @@ async def lifespan(app: FastAPI):
     """
     global artifact_bundle, model_source
 
+    logger.info("Starting model load sequence")
+
     # Priority 1: Try MLflow Registry - download artifact bundle from production model
     if settings.mlflow_tracking_uri:
-        print(
-            f"Attempting to load from MLflow ({settings.mlflow_model_alias}): {settings.mlflow_tracking_uri}"
-        )
         artifact_bundle, model_source = load_bundle_from_mlflow()
 
     # Priority 2: Fallback to local artifact bundle
     if artifact_bundle is None:
-        print("Attempting to load local artifact bundle (fallback)...")
         artifact_bundle, model_source = load_artifact_bundle()
 
     if artifact_bundle is None:
-        print("Warning: No model available for predictions")
+        logger.warning("No model available for predictions")
 
     yield
 

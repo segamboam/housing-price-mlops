@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # Prometheus Settings
     metrics_enabled: bool = True
 
+    # Logging Settings
+    log_level: str = "INFO"
+    log_json_format: bool = True  # False for local development
+
     # ML Defaults
     default_model_type: str = "gradient_boost"
     default_preprocessing: str = "v2_knn"
