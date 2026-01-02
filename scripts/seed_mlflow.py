@@ -81,12 +81,27 @@ def seed_mlflow() -> None:
     # Create a run and log the pre-trained model
     print("\nUploading seed model to MLflow...")
 
-    with mlflow.start_run(run_name="seed_model") as run:
+    # Extract model info for descriptive naming
+    model_type = metadata.get("model_type", "unknown")
+    preprocessing = metadata.get("preprocessing_strategy", "unknown")
+    run_name = f"seed_{model_type}_{preprocessing}"
+
+    with mlflow.start_run(run_name=run_name) as run:
+        # Set run tags for filtering and organization (MLflow 3.x)
+        mlflow.set_tags(
+            {
+                "model_type": model_type,
+                "preprocessing": preprocessing,
+                "source": "seed",
+                "environment": "demo",
+            }
+        )
+
         # Log parameters from metadata
         mlflow.log_params(
             {
-                "model_type": metadata.get("model_type", "unknown"),
-                "preprocessing_strategy": metadata.get("preprocessing_strategy", "unknown"),
+                "model_type": model_type,
+                "preprocessing_strategy": preprocessing,
                 "source": "seed",
                 "training_samples": metadata.get("training_samples", 0),
                 "test_samples": metadata.get("test_samples", 0),
@@ -116,30 +131,63 @@ def seed_mlflow() -> None:
         model_path = seed_path / "model.joblib"
         model = joblib.load(model_path)
 
+        # Use descriptive artifact_path for LoggedModel name in MLflow 3.x
+        artifact_path = f"sklearn_{model_type}"
         mlflow.sklearn.log_model(
             model,
-            artifact_path="model",
+            artifact_path=artifact_path,
             registered_model_name=settings.mlflow_model_name,
         )
 
         run_id = run.info.run_id
         print(f"  Run ID: {run_id[:8]}...")
 
-    # Set production alias
-    print("\nSetting production alias...")
+    # Set production alias and add model version metadata
+    print("\nSetting production alias and metadata...")
     try:
         # Get the latest version
         versions = client.search_model_versions(f"name='{settings.mlflow_model_name}'")
         if versions:
             latest_version = max(versions, key=lambda v: int(v.version))
+            version_num = latest_version.version
+
+            # Add description to model version (MLflow 3.x)
+            test_r2 = test_metrics.get("r2", 0)
+            test_rmse = test_metrics.get("rmse", 0)
+            version_description = (
+                f"Seed model: {model_type} with {preprocessing} preprocessing. "
+                f"Test R²: {test_r2:.4f}, RMSE: {test_rmse:.4f}"
+            )
+            client.update_model_version(
+                name=settings.mlflow_model_name,
+                version=version_num,
+                description=version_description,
+            )
+
+            # Add tags to model version for filtering
+            client.set_model_version_tag(
+                settings.mlflow_model_name, version_num, "model_type", model_type
+            )
+            client.set_model_version_tag(
+                settings.mlflow_model_name, version_num, "preprocessing", preprocessing
+            )
+            client.set_model_version_tag(
+                settings.mlflow_model_name, version_num, "source", "seed"
+            )
+            client.set_model_version_tag(
+                settings.mlflow_model_name, version_num, "test_r2", f"{test_r2:.4f}"
+            )
+
+            # Set production alias
             client.set_registered_model_alias(
                 name=settings.mlflow_model_name,
                 alias="production",
-                version=latest_version.version,
+                version=version_num,
             )
-            print(f"  Set 'production' alias to version {latest_version.version}")
+            print(f"  Set 'production' alias to version {version_num}")
+            print(f"  Added description and tags to version {version_num}")
     except Exception as e:
-        print(f"  Warning: Could not set alias: {e}")
+        print(f"  Warning: Could not set alias/metadata: {e}")
 
     print("\n" + "=" * 60)
     print("SEED COMPLETE!")

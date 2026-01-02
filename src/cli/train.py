@@ -1,18 +1,19 @@
 """CLI command to train a model."""
 
+from datetime import datetime
 from pathlib import Path
-
-import typer
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from sklearn.model_selection import train_test_split
 
 import mlflow
 import mlflow.sklearn
+import typer
+from mlflow import MlflowClient
+from mlflow.models import infer_signature
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from sklearn.model_selection import train_test_split
 
 # Import strategies to register them with factories
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
-from mlflow.models import infer_signature
 from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,
@@ -206,11 +207,22 @@ def train(
         X_test_transformed = preprocessor.transform(X_test)
         progress.update(task, description=f"[green]Preprocessed with {preprocessing}")
 
-        # Train
-        run_name = f"{model_type}_{preprocessing}"
+        # Train - use descriptive run name with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{model_type}_{preprocessing}_{timestamp}"
 
         with mlflow.start_run(run_name=run_name) as run:
             progress.update(task, description=f"Training {model_type}...")
+
+            # Set run tags for filtering and organization (MLflow 3.x)
+            mlflow.set_tags(
+                {
+                    "model_type": model_type,
+                    "preprocessing": preprocessing,
+                    "source": "cli",
+                    "environment": "development",
+                }
+            )
 
             # Log parameters
             mlflow.log_params(
@@ -318,10 +330,11 @@ def train(
                 model.model.predict(X_train_transformed[:1]),
             )
 
-            # Log model (without registering yet)
+            # Log model with descriptive artifact_path for LoggedModel name in MLflow 3.x
+            model_artifact_path = f"sklearn_{model_type}"
             mlflow.sklearn.log_model(
                 model.model,
-                artifact_path="model",
+                artifact_path=model_artifact_path,
                 signature=signature,
             )
 
@@ -354,12 +367,30 @@ def train(
     # Register model if requested
     registered_version = None
     if should_register:
-        model_uri = f"runs:/{run_id}/model"
+        model_uri = f"runs:/{run_id}/sklearn_{model_type}"
         model_name = settings.mlflow_model_name
 
         # Register the model (no alias - use 'meli promote' to assign production)
         result = mlflow.register_model(model_uri, model_name)
         registered_version = result.version
+
+        # Add description and tags to the model version (MLflow 3.x)
+        client = MlflowClient()
+        version_description = (
+            f"{model_type} with {preprocessing} preprocessing. "
+            f"Test R²: {test_result['metrics']['r2']:.4f}, "
+            f"RMSE: {test_result['metrics']['rmse']:.4f}"
+        )
+        client.update_model_version(
+            name=model_name,
+            version=registered_version,
+            description=version_description,
+        )
+
+        # Add tags to model version for filtering
+        client.set_model_version_tag(model_name, registered_version, "model_type", model_type)
+        client.set_model_version_tag(model_name, registered_version, "preprocessing", preprocessing)
+        client.set_model_version_tag(model_name, registered_version, "test_r2", f"{test_result['metrics']['r2']:.4f}")
 
         console.print(
             f"[green]Model registered as {model_name} v{registered_version}[/green]\n"

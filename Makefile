@@ -47,7 +47,7 @@ DEFAULT_PREPROC := v1_median
 .PHONY: help install install-dev setup \
         train train-rf train-gb train-xgb train-linear train-cv \
         experiment experiment-all experiment-models experiment-preproc experiment-yaml \
-        promote-list promote \
+        runs register promote-list promote \
         api api-prod mlflow \
         infra-up infra-down infra-logs infra-clean \
         seed \
@@ -140,8 +140,19 @@ train-cv: ## Train with cross-validation enabled
 	$(CLI) train --cv --cv-splits 5
 
 #==============================================================================
-# MODEL PROMOTION
+# MODEL MANAGEMENT
 #==============================================================================
+runs: ## List recent MLflow experiment runs
+	$(CLI) runs
+
+register: ## Register an existing run as a model. Usage: make register RUN_ID=abc123
+ifndef RUN_ID
+	@echo "Error: RUN_ID is required. Usage: make register RUN_ID=abc123"
+	@echo "Tip: Use 'make runs' or MLflow UI to find run IDs"
+	@exit 1
+endif
+	$(CLI) register $(RUN_ID)
+
 promote-list: ## List all model versions with their aliases
 	$(CLI) promote --list
 

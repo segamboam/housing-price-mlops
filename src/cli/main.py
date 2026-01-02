@@ -2,7 +2,7 @@
 
 import typer
 
-from src.cli import info, promote, runs, train
+from src.cli import info, promote, register, runs, train
 
 app = typer.Typer(
     name="housing",
@@ -16,6 +16,7 @@ app.command(name="train", help="Train a new model")(train.train)
 app.command(name="info", help="Show current model information")(info.info)
 app.command(name="runs", help="List MLflow experiment runs")(runs.runs)
 app.command(name="promote", help="Promote a model version to production")(promote.promote)
+app.command(name="register", help="Register an existing run as a model")(register.register)
 
 
 if __name__ == "__main__":
