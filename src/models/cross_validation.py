@@ -6,6 +6,10 @@ from typing import Any
 import numpy as np
 from sklearn.model_selection import KFold, cross_val_score, learning_curve
 
+from src.config.settings import get_settings
+
+_settings = get_settings()
+
 
 @dataclass
 class CVResult:
@@ -170,8 +174,8 @@ def compute_learning_curve(
     y: np.ndarray,
     train_sizes: np.ndarray | None = None,
     cv: int = 5,
-    random_state: int = 42,
-    overfitting_threshold: float = 0.15,
+    random_state: int | None = None,
+    overfitting_threshold: float | None = None,
 ) -> LearningCurveResult:
     """Compute learning curves to detect overfitting.
 
@@ -185,12 +189,17 @@ def compute_learning_curve(
         train_sizes: Array of training set sizes to evaluate.
                     Defaults to 10 points from 10% to 100%.
         cv: Number of cross-validation folds.
-        random_state: Random seed for reproducibility.
+        random_state: Random seed for reproducibility. Defaults to settings.default_random_state.
         overfitting_threshold: RMSE gap threshold to flag overfitting.
+                              Defaults to settings.overfitting_rmse_threshold.
 
     Returns:
         LearningCurveResult with training and validation scores.
     """
+    if random_state is None:
+        random_state = _settings.default_random_state
+    if overfitting_threshold is None:
+        overfitting_threshold = _settings.overfitting_rmse_threshold
     if train_sizes is None:
         train_sizes = np.linspace(0.1, 1.0, 10)
 

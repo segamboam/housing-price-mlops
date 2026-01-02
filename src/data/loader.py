@@ -19,6 +19,12 @@ FEATURE_COLUMNS = [
     "LSTAT",
 ]
 
+# Categorical features (binary/discrete)
+CATEGORICAL_FEATURES = ["CHAS"]
+
+# Numeric features (continuous) - derived from FEATURE_COLUMNS
+NUMERIC_FEATURES = [f for f in FEATURE_COLUMNS if f not in CATEGORICAL_FEATURES]
+
 # Target column for prediction
 TARGET_COLUMN = "MEDV"
 

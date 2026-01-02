@@ -1,4 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.config.settings import get_settings
+
+_settings = get_settings()
 
 
 class HousingFeatures(BaseModel):
@@ -204,9 +208,18 @@ class BatchPredictionRequest(BaseModel):
     items: list[HousingFeatures] = Field(
         ...,
         min_length=1,
-        max_length=100,
-        description="Lista de features para predecir (máximo 100 items)",
+        description=f"Lista de features para predecir (máximo {_settings.batch_max_items} items)",
     )
+
+    @field_validator("items")
+    @classmethod
+    def validate_max_items(cls, v: list[HousingFeatures]) -> list[HousingFeatures]:
+        """Validate batch size against configured maximum."""
+        if len(v) > _settings.batch_max_items:
+            raise ValueError(
+                f"Batch size {len(v)} exceeds maximum allowed ({_settings.batch_max_items})"
+            )
+        return v
 
     model_config = {
         "json_schema_extra": {

@@ -4,6 +4,10 @@ from pathlib import Path
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+from src.config.settings import get_settings
+
+_settings = get_settings()
+
 
 def calculate_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Calculate Mean Absolute Percentage Error.
@@ -29,18 +33,21 @@ def calculate_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 def accuracy_within_tolerance(
     y_true: np.ndarray,
     y_pred: np.ndarray,
-    tolerance: float = 0.10,
+    tolerance: float | None = None,
 ) -> float:
     """Calculate percentage of predictions within a tolerance threshold.
 
     Args:
         y_true: True target values.
         y_pred: Predicted target values.
-        tolerance: Allowed relative deviation as fraction (default 10%).
+        tolerance: Allowed relative deviation as fraction. Defaults to settings.accuracy_tolerance.
 
     Returns:
         Percentage of predictions within tolerance (0-100).
     """
+    if tolerance is None:
+        tolerance = _settings.accuracy_tolerance
+
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
 
@@ -65,7 +72,7 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float
     mae = mean_absolute_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
     mape = calculate_mape(y_true, y_pred)
-    acc_10 = accuracy_within_tolerance(y_true, y_pred, tolerance=0.10)
+    acc_10 = accuracy_within_tolerance(y_true, y_pred)
 
     return {
         "rmse": round(rmse, 4),
@@ -124,9 +131,9 @@ def generate_evaluation_report(
     if model_params:
         report["model_params"] = model_params
 
-    # Check for potential overfitting
+    # Check for potential overfitting using configured threshold
     r2_diff = train_metrics.get("r2", 0) - test_metrics.get("r2", 0)
-    report["overfitting_warning"] = r2_diff > 0.1
+    report["overfitting_warning"] = r2_diff > _settings.overfitting_r2_threshold
 
     return report
 

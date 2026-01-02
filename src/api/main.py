@@ -285,6 +285,19 @@ def check_feature_ranges(
     return warnings
 
 
+def format_price(value: float) -> str:
+    """Format prediction value as currency string.
+
+    Args:
+        value: Raw prediction value (in model units, e.g., $1000s).
+
+    Returns:
+        Formatted price string (e.g., "$24,500").
+    """
+    display_value = value * settings.price_multiplier
+    return f"{settings.currency_symbol}{display_value:,.0f}"
+
+
 @app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
 async def predict(
     features: HousingFeatures,
@@ -325,7 +338,7 @@ async def predict(
     prediction_value = round(float(prediction), 2)
     return PredictionResponse(
         prediction=prediction_value,
-        prediction_formatted=f"${prediction_value * 1000:,.0f}",
+        prediction_formatted=format_price(prediction_value),
         model_version=model_version,
         model_type=artifact_bundle.metadata.model_type if artifact_bundle else None,
         warnings=warnings,
@@ -388,7 +401,7 @@ async def predict_batch(
             BatchPredictionItem(
                 index=i,
                 prediction=pred_value,
-                prediction_formatted=f"${pred_value * 1000:,.0f}",
+                prediction_formatted=format_price(pred_value),
                 warnings=warnings,
             )
         )

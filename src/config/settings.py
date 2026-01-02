@@ -60,6 +60,24 @@ class Settings(BaseSettings):
     default_random_state: int = 42
     default_cv_splits: int = 5
 
+    # ML Evaluation Thresholds
+    # Threshold for R² difference between train/test to flag overfitting
+    overfitting_r2_threshold: float = 0.1
+    # RMSE gap threshold for learning curve overfitting detection
+    overfitting_rmse_threshold: float = 0.15
+    # Default tolerance for accuracy_within_tolerance metric (10%)
+    accuracy_tolerance: float = 0.10
+
+    # API Limits
+    # Maximum items allowed in batch prediction requests
+    batch_max_items: int = 100
+
+    # Prediction Display
+    # Currency symbol for formatted predictions
+    currency_symbol: str = "$"
+    # Multiplier to convert model output to display units (e.g., 1000 for $1000s)
+    price_multiplier: float = 1000.0
+
     # MLflow Experiment
     mlflow_experiment_name: str = "housing-price-prediction"
 

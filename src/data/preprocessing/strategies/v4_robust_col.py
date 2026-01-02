@@ -5,25 +5,9 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
 
+from src.data.loader import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 from src.data.preprocessing.base import BasePreprocessor
 from src.data.preprocessing.factory import PreprocessingStrategy, PreprocessorFactory
-
-# Feature definitions for Boston Housing dataset
-NUMERIC_FEATURES = [
-    "CRIM",
-    "ZN",
-    "INDUS",
-    "NOX",
-    "RM",
-    "AGE",
-    "DIS",
-    "RAD",
-    "TAX",
-    "PTRATIO",
-    "B",
-    "LSTAT",
-]
-CATEGORICAL_FEATURES = ["CHAS"]
 
 
 @PreprocessorFactory.register(PreprocessingStrategy.V4_ROBUST_COL)
