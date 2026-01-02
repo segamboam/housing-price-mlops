@@ -289,6 +289,31 @@ Respuesta:
 }
 ```
 
+#### Predicción en lote
+
+```bash
+curl -X POST http://localhost:8000/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"CRIM": 0.00632, "ZN": 18.0, "INDUS": 2.31, "CHAS": 0, "NOX": 0.538, "RM": 6.575, "AGE": 65.2, "DIS": 4.09, "RAD": 1, "TAX": 296.0, "PTRATIO": 15.3, "B": 396.9, "LSTAT": 4.98},
+      {"CRIM": 0.02731, "ZN": 0.0, "INDUS": 7.07, "CHAS": 0, "NOX": 0.469, "RM": 6.421, "AGE": 78.9, "DIS": 4.9671, "RAD": 2, "TAX": 242.0, "PTRATIO": 17.8, "B": 396.9, "LSTAT": 9.14}
+    ]
+  }'
+```
+
+#### Hot Reload de modelo
+
+```bash
+# Recargar modelo desde MLflow (alias por defecto: production)
+curl -X POST http://localhost:8000/model/reload
+
+# Recargar modelo con alias específico (staging, champion, etc.)
+curl -X POST http://localhost:8000/model/reload \
+  -H "Content-Type: application/json" \
+  -d '{"alias": "staging"}'
+```
+
 ### CLI
 
 ```bash
@@ -335,8 +360,10 @@ make docker-down
 |----------|--------|-------------|------|
 | `/` | GET | Información de la API | No |
 | `/health` | GET | Health check | No |
-| `/predict` | POST | Realizar predicción | Sí* |
+| `/predict` | POST | Realizar predicción individual | Sí* |
+| `/predict/batch` | POST | Predicciones en lote (máx 100) | Sí* |
 | `/model/info` | GET | Metadata del modelo | No |
+| `/model/reload` | POST | Recargar modelo desde MLflow (hot reload) | Sí* |
 | `/metrics` | GET | Métricas Prometheus | No |
 
 *Requiere header `X-API-Key` si `API_KEY` está configurado.
@@ -507,15 +534,7 @@ make ci
 
 ## Uso de Herramientas AI
 
-Este proyecto fue desarrollado con asistencia de **Claude Code** (Anthropic) para:
-
-- Generación de código boilerplate y estructuras base
-- Refactoring y aplicación de patrones de diseño (Strategy, Factory)
-- Documentación, docstrings y README
-- Debugging y resolución de errores
-- Configuración de CI/CD y Docker
-
-Todo el código generado fue revisado, probado y adaptado según los requerimientos específicos del proyecto.
+Este proyecto fue desarrollado con asistencia de herramientas de inteligencia artificial. Para detalles completos sobre las herramientas utilizadas y los principios aplicados, consulta **[AI_USAGE.md](AI_USAGE.md)**.
 
 ---
 

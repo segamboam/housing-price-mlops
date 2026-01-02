@@ -1,5 +1,6 @@
 """FastAPI application for housing price prediction."""
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 
@@ -16,9 +17,14 @@ from src.api.middleware import (
     record_prediction_value,
 )
 from src.api.schemas import (
+    BatchPredictionItem,
+    BatchPredictionRequest,
+    BatchPredictionResponse,
     HealthResponse,
     HousingFeatures,
     ModelInfoResponse,
+    ModelReloadRequest,
+    ModelReloadResponse,
     PredictionResponse,
 )
 from src.api.security import verify_api_key
@@ -36,6 +42,9 @@ model_source: str | None = None
 # Legacy fallback globals (for backward compatibility)
 legacy_model = None
 legacy_scaler = None
+
+# Lock para operaciones de recarga de modelo (thread-safety)
+_reload_lock = asyncio.Lock()
 
 
 def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
@@ -60,28 +69,38 @@ def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
         return None, None
 
 
-def load_bundle_from_mlflow() -> tuple[MLArtifactBundle | None, str | None]:
-    """Load artifact bundle from MLflow Registry (production alias).
+def load_bundle_from_mlflow(
+    alias: str | None = None,
+) -> tuple[MLArtifactBundle | None, str | None]:
+    """Load artifact bundle from MLflow Registry.
 
     This downloads the complete artifact bundle (model + preprocessor + metadata)
-    from the MLflow run associated with the 'production' model version.
+    from the MLflow run associated with the specified model alias.
+
+    Args:
+        alias: MLflow model alias to load. Uses settings default if None.
+
+    Returns:
+        Tuple of (artifact_bundle, source_string) or (None, None) on failure.
     """
     import tempfile
 
     import mlflow
     from mlflow import MlflowClient
 
+    effective_alias = alias or settings.mlflow_model_alias
+
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     client = MlflowClient()
 
     try:
-        # Get the model version with the production alias
+        # Get the model version with the specified alias
         model_version = client.get_model_version_by_alias(
-            settings.mlflow_model_name, settings.mlflow_model_alias
+            settings.mlflow_model_name, effective_alias
         )
         run_id = model_version.run_id
         version = model_version.version
-        print(f"Found {settings.mlflow_model_alias} model: version {version}, run {run_id[:8]}")
+        print(f"Found {effective_alias} model: version {version}, run {run_id[:8]}")
 
         # Download artifact bundle from the run
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -94,7 +113,7 @@ def load_bundle_from_mlflow() -> tuple[MLArtifactBundle | None, str | None]:
             return bundle, "mlflow"
 
     except Exception as e:
-        print(f"Failed to load bundle from MLflow ({settings.mlflow_model_alias}): {e}")
+        print(f"Failed to load bundle from MLflow ({effective_alias}): {e}")
         record_model_load("failure", "mlflow")
         return None, None
 
@@ -345,3 +364,150 @@ async def predict(
         model_type=artifact_bundle.metadata.model_type if artifact_bundle else None,
         warnings=warnings,
     )
+
+
+@app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["prediction"])
+async def predict_batch(
+    request: BatchPredictionRequest,
+    api_key: str | None = Depends(verify_api_key),
+):
+    """Predicción en lote para múltiples sets de features.
+
+    Procesa múltiples predicciones eficientemente:
+    - Transforma todas las features de una vez
+    - Ejecuta predicción en batch
+
+    Máximo 100 items por request.
+    Retorna warnings por item para features fuera de rango.
+    """
+    start_time = time.perf_counter()
+
+    if artifact_bundle is None and legacy_model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Please train the model first.",
+        )
+
+    items = request.items
+
+    # Collect warnings for each item
+    all_warnings: list[list[str]] = []
+    feature_stats = artifact_bundle.metadata.feature_stats if artifact_bundle else {}
+
+    for features in items:
+        if feature_stats:
+            warnings = check_feature_ranges(features, feature_stats)
+        else:
+            warnings = []
+        all_warnings.append(warnings)
+
+    # Build DataFrame with all items for efficient batch processing
+    rows = []
+    for features in items:
+        row = {col: getattr(features, col) for col in FEATURE_COLUMNS}
+        rows.append(row)
+
+    X = pd.DataFrame(rows)
+
+    # Predict all at once
+    if artifact_bundle is not None:
+        predictions = artifact_bundle.predict(X)
+        model_version = artifact_bundle.metadata.artifact_id[:8]
+        model_type = artifact_bundle.metadata.model_type
+    else:
+        # Legacy path
+        X_scaled = legacy_scaler.transform(X.values)
+        predictions = legacy_model.predict(X_scaled)
+        model_version = settings.api_version
+        model_type = None
+
+    # Build response items
+    prediction_items = []
+    for i, (pred, warnings) in enumerate(zip(predictions, all_warnings)):
+        pred_value = round(float(pred), 2)
+        prediction_items.append(
+            BatchPredictionItem(
+                index=i,
+                prediction=pred_value,
+                prediction_formatted=f"${pred_value * 1000:,.0f}",
+                warnings=warnings,
+            )
+        )
+        record_prediction_value(float(pred))
+
+    # Record metrics
+    duration = time.perf_counter() - start_time
+    record_prediction(duration)
+
+    return BatchPredictionResponse(
+        predictions=prediction_items,
+        model_version=model_version,
+        model_type=model_type,
+        total_items=len(items),
+        processing_time_ms=duration * 1000,
+    )
+
+
+@app.post("/model/reload", response_model=ModelReloadResponse, tags=["model"])
+async def reload_model(
+    request: ModelReloadRequest | None = None,
+    api_key: str | None = Depends(verify_api_key),
+):
+    """Recargar modelo desde MLflow sin reiniciar el servicio.
+
+    Operación thread-safe que reemplaza el modelo atómicamente.
+    Opcionalmente especifica un alias para cargar una versión diferente.
+
+    Requiere autenticación si está configurada.
+    """
+    global artifact_bundle, model_source
+
+    async with _reload_lock:
+        start_time = time.perf_counter()
+
+        # Capture previous model info
+        previous_info = None
+        if artifact_bundle is not None:
+            previous_info = {
+                "artifact_id": artifact_bundle.metadata.artifact_id[:8],
+                "model_type": artifact_bundle.metadata.model_type,
+                "source": model_source,
+            }
+
+        # Determine alias to use
+        alias = request.alias if request else None
+        effective_alias = alias or settings.mlflow_model_alias
+
+        # Attempt reload from MLflow
+        new_bundle, new_source = load_bundle_from_mlflow(alias)
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        if new_bundle is None:
+            return ModelReloadResponse(
+                status="failed",
+                previous_model=previous_info,
+                current_model=previous_info,  # unchanged
+                message=f"Error al cargar modelo desde MLflow ({effective_alias})",
+                reload_time_ms=duration_ms,
+            )
+
+        # Atomic swap
+        artifact_bundle = new_bundle
+        model_source = new_source
+
+        current_info = {
+            "artifact_id": artifact_bundle.metadata.artifact_id[:8],
+            "model_type": artifact_bundle.metadata.model_type,
+            "source": model_source,
+        }
+
+        record_model_load("success", "mlflow_reload")
+
+        return ModelReloadResponse(
+            status="success",
+            previous_model=previous_info,
+            current_model=current_info,
+            message=f"Modelo recargado exitosamente desde MLflow ({effective_alias})",
+            reload_time_ms=duration_ms,
+        )

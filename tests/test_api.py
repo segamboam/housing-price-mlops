@@ -129,3 +129,201 @@ class TestFeatureRangeChecking:
         warnings = check_feature_ranges(features, {})
 
         assert len(warnings) == 0
+
+
+class TestBatchPredictEndpoint:
+    """Tests for /predict/batch endpoint."""
+
+    def test_batch_predict_success(self, sample_features_dict, mock_artifact_bundle):
+        """Batch prediction returns all predictions."""
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        mock_artifact_bundle.predict.return_value = np.array([25.5, 26.0])
+
+        request_data = {"items": [sample_features_dict, sample_features_dict]}
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_items"] == 2
+        assert len(data["predictions"]) == 2
+        assert data["predictions"][0]["index"] == 0
+        assert data["predictions"][1]["index"] == 1
+        assert "prediction" in data["predictions"][0]
+        assert "prediction_formatted" in data["predictions"][0]
+
+    def test_batch_predict_single_item(self, sample_features_dict, mock_artifact_bundle):
+        """Batch prediction works with single item."""
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        mock_artifact_bundle.predict.return_value = np.array([25.5])
+
+        request_data = {"items": [sample_features_dict]}
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_items"] == 1
+
+    def test_batch_predict_empty_rejected(self, mock_artifact_bundle):
+        """Batch rejects empty items list."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json={"items": []})
+
+        assert response.status_code == 422
+
+    def test_batch_predict_over_max_rejected(self, sample_features_dict, mock_artifact_bundle):
+        """Batch rejects more than 100 items."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        items = [sample_features_dict] * 101
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json={"items": items})
+
+        assert response.status_code == 422
+
+    def test_batch_predict_invalid_item_rejects_all(self, sample_features_dict, mock_artifact_bundle):
+        """One invalid item rejects entire batch."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        items = [sample_features_dict, {"CRIM": "invalid"}]
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json={"items": items})
+
+        assert response.status_code == 422
+
+    def test_batch_predict_includes_warnings(self, sample_features_dict, feature_stats, mock_artifact_bundle):
+        """Batch predictions include per-item warnings."""
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        mock_artifact_bundle.metadata.feature_stats = feature_stats
+        mock_artifact_bundle.predict.return_value = np.array([25.5, 26.0])
+
+        items = [sample_features_dict.copy(), sample_features_dict.copy()]
+        items[1]["CRIM"] = 100.0  # Out of range
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json={"items": items})
+
+        assert response.status_code == 200
+        data = response.json()
+        # First item should have no warnings
+        assert len(data["predictions"][0]["warnings"]) == 0
+        # Second item should have CRIM warning
+        assert len(data["predictions"][1]["warnings"]) > 0
+        assert any("CRIM" in w for w in data["predictions"][1]["warnings"])
+
+
+class TestModelReloadEndpoint:
+    """Tests for /model/reload endpoint."""
+
+    def test_reload_success(self, mock_artifact_bundle, monkeypatch):
+        """Reload succeeds and returns old vs new info."""
+        from unittest.mock import MagicMock
+
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        # Create a new mock for the reloaded bundle
+        new_mock_metadata = MagicMock()
+        new_mock_metadata.model_type = "gradient_boost"
+        new_mock_metadata.artifact_id = "new-model-87654321"
+
+        new_mock_bundle = MagicMock()
+        new_mock_bundle.predict.return_value = np.array([30.0])
+        new_mock_bundle.metadata = new_mock_metadata
+
+        # Mock load_bundle_from_mlflow to return new bundle
+        monkeypatch.setattr(
+            "src.api.main.load_bundle_from_mlflow",
+            lambda alias=None: (new_mock_bundle, "mlflow"),
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/model/reload")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "previous_model" in data
+        assert "current_model" in data
+        assert data["current_model"]["artifact_id"] == "new-mode"  # First 8 chars
+        assert "reload_time_ms" in data
+
+    def test_reload_with_alias(self, mock_artifact_bundle, monkeypatch):
+        """Reload with specific alias parameter."""
+        from unittest.mock import MagicMock
+
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        new_mock_metadata = MagicMock()
+        new_mock_metadata.model_type = "staging_model"
+        new_mock_metadata.artifact_id = "staging-12345678"
+
+        new_mock_bundle = MagicMock()
+        new_mock_bundle.predict.return_value = np.array([28.0])
+        new_mock_bundle.metadata = new_mock_metadata
+
+        captured_alias = []
+
+        def mock_load(alias=None):
+            captured_alias.append(alias)
+            return (new_mock_bundle, "mlflow")
+
+        with TestClient(app) as client:
+            # Apply mock after TestClient init (lifespan already ran)
+            monkeypatch.setattr("src.api.main.load_bundle_from_mlflow", mock_load)
+            response = client.post("/model/reload", json={"alias": "staging"})
+
+        assert response.status_code == 200
+        # The reload endpoint should have been called with "staging"
+        assert "staging" in captured_alias
+
+    def test_reload_failure_keeps_old_model(self, mock_artifact_bundle, monkeypatch):
+        """Failed reload keeps existing model."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        # Mock load to fail
+        monkeypatch.setattr(
+            "src.api.main.load_bundle_from_mlflow",
+            lambda alias=None: (None, None),
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/model/reload")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "failed"
+        # Model should be unchanged
+        assert data["previous_model"] == data["current_model"]

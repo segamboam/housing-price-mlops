@@ -195,3 +195,152 @@ class ErrorResponse(BaseModel):
     """Schema for error responses."""
 
     detail: str = Field(..., description="Error message")
+
+
+# Batch Prediction Schemas
+class BatchPredictionRequest(BaseModel):
+    """Request para predicciones en lote."""
+
+    items: list[HousingFeatures] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Lista de features para predecir (máximo 100 items)",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "items": [
+                    {
+                        "CRIM": 0.00632,
+                        "ZN": 18.0,
+                        "INDUS": 2.31,
+                        "CHAS": 0,
+                        "NOX": 0.538,
+                        "RM": 6.575,
+                        "AGE": 65.2,
+                        "DIS": 4.09,
+                        "RAD": 1,
+                        "TAX": 296.0,
+                        "PTRATIO": 15.3,
+                        "B": 396.9,
+                        "LSTAT": 4.98,
+                    },
+                    {
+                        "CRIM": 0.02731,
+                        "ZN": 0.0,
+                        "INDUS": 7.07,
+                        "CHAS": 0,
+                        "NOX": 0.469,
+                        "RM": 6.421,
+                        "AGE": 78.9,
+                        "DIS": 4.9671,
+                        "RAD": 2,
+                        "TAX": 242.0,
+                        "PTRATIO": 17.8,
+                        "B": 396.9,
+                        "LSTAT": 9.14,
+                    },
+                ]
+            }
+        }
+    }
+
+
+class BatchPredictionItem(BaseModel):
+    """Item individual en la respuesta de batch prediction."""
+
+    index: int = Field(..., description="Índice en el array de entrada")
+    prediction: float = Field(..., description="Precio predicho en $1000s")
+    prediction_formatted: str = Field(..., description="Precio formateado en USD")
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Advertencias para esta predicción",
+    )
+
+
+class BatchPredictionResponse(BaseModel):
+    """Response para predicciones en lote."""
+
+    predictions: list[BatchPredictionItem] = Field(
+        ..., description="Lista de predicciones"
+    )
+    model_version: str = Field(..., description="Versión del modelo utilizado")
+    model_type: str | None = Field(None, description="Tipo de modelo")
+    total_items: int = Field(..., description="Total de items procesados")
+    processing_time_ms: float = Field(
+        ..., description="Tiempo de procesamiento en milisegundos"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "predictions": [
+                    {
+                        "index": 0,
+                        "prediction": 30.25,
+                        "prediction_formatted": "$30,250",
+                        "warnings": [],
+                    },
+                    {
+                        "index": 1,
+                        "prediction": 21.60,
+                        "prediction_formatted": "$21,600",
+                        "warnings": ["LSTAT (9.14) is above training max (8.5)"],
+                    },
+                ],
+                "model_version": "abc123de",
+                "model_type": "random_forest",
+                "total_items": 2,
+                "processing_time_ms": 45.2,
+            }
+        }
+    }
+
+
+# Hot Reload Schemas
+class ModelReloadRequest(BaseModel):
+    """Request para recargar modelo desde MLflow."""
+
+    alias: str | None = Field(
+        None,
+        description="Alias de MLflow a cargar (ej: 'production', 'staging'). Usa el default si no se especifica.",
+        json_schema_extra={"example": "staging"},
+    )
+
+
+class ModelReloadResponse(BaseModel):
+    """Response del endpoint de recarga de modelo."""
+
+    status: str = Field(..., description="Estado de la operación ('success' o 'failed')")
+    previous_model: dict | None = Field(
+        None, description="Info del modelo anterior antes de la recarga"
+    )
+    current_model: dict | None = Field(
+        None, description="Info del modelo actual después de la recarga"
+    )
+    message: str = Field(..., description="Mensaje descriptivo de la operación")
+    reload_time_ms: float = Field(
+        ..., description="Tiempo de recarga en milisegundos"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "success",
+                "previous_model": {
+                    "artifact_id": "abc12345",
+                    "model_type": "random_forest",
+                    "source": "mlflow",
+                },
+                "current_model": {
+                    "artifact_id": "def67890",
+                    "model_type": "gradient_boost",
+                    "source": "mlflow",
+                },
+                "message": "Modelo recargado exitosamente desde MLflow (production)",
+                "reload_time_ms": 1523.45,
+            }
+        }
+    }
