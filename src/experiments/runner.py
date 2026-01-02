@@ -84,9 +84,7 @@ class ExperimentRunner:
 
         models = OmegaConf.to_container(grid.models, resolve=True)
         preprocessors = OmegaConf.to_container(grid.preprocessors, resolve=True)
-        hyperparameters = OmegaConf.to_container(
-            grid.get("hyperparameters", {}), resolve=True
-        )
+        hyperparameters = OmegaConf.to_container(grid.get("hyperparameters", {}), resolve=True)
 
         for model, preproc in itertools.product(models, preprocessors):
             model_hparams = hyperparameters.get(model, {})
@@ -94,9 +92,7 @@ class ExperimentRunner:
             if model_hparams:
                 # Generate all combinations of hyperparameters
                 hparam_keys = list(model_hparams.keys())
-                hparam_values = [
-                    v if isinstance(v, list) else [v] for v in model_hparams.values()
-                ]
+                hparam_values = [v if isinstance(v, list) else [v] for v in model_hparams.values()]
 
                 for combo in itertools.product(*hparam_values):
                     hparams = dict(zip(hparam_keys, combo))
@@ -139,9 +135,7 @@ class ExperimentRunner:
         """
         from src.experiments.train_experiment import train_single_experiment
 
-        return train_single_experiment(
-            config, data_path=self.config.settings.data_path
-        )
+        return train_single_experiment(config, data_path=self.config.settings.data_path)
 
     def run_all(self, verbose: bool = True) -> list[ExperimentResult]:
         """Run all experiments in the grid.
@@ -172,9 +166,7 @@ class ExperimentRunner:
             for i, config in enumerate(configs, 1):
                 desc = f"[{i}/{total}] {config.model_type} + {config.preprocessing}"
                 if config.hyperparameters:
-                    params_str = ", ".join(
-                        f"{k}={v}" for k, v in config.hyperparameters.items()
-                    )
+                    params_str = ", ".join(f"{k}={v}" for k, v in config.hyperparameters.items())
                     desc += f" ({params_str})"
                 progress.update(task, description=desc)
 

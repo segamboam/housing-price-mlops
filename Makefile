@@ -12,29 +12,16 @@ PYTHON := uv run python
 PYTEST := uv run pytest
 RUFF := uv run ruff
 UVICORN := uv run uvicorn
-MLFLOW := uv run mlflow
 CLI := $(PYTHON) -m src.cli.main
+COMPOSE := docker compose
 
 # Paths
 SRC := src
 TESTS := tests
-DATA := data/HousingData.csv
 
-# Docker
-IMAGE_NAME := housing-api
-IMAGE_TAG := latest
-COMPOSE := docker compose
-
-# API
-API_HOST := 0.0.0.0
+# Ports
 API_PORT := 8000
 MLFLOW_PORT := 5000
-
-# Models & Preprocessing strategies
-MODELS := random_forest gradient_boost xgboost linear
-PREPROCESSINGS := v1_median v2_knn v3_iterative v4_robust_col
-DEFAULT_MODEL := random_forest
-DEFAULT_PREPROC := v1_median
 
 #------------------------------------------------------------------------------
 # Default target
@@ -44,19 +31,14 @@ DEFAULT_PREPROC := v1_median
 #------------------------------------------------------------------------------
 # Phony targets
 #------------------------------------------------------------------------------
-.PHONY: help install install-dev setup \
-        train train-rf train-gb train-xgb train-linear train-cv \
-        experiment experiment-all experiment-models experiment-preproc experiment-yaml \
-        runs register promote-list promote \
-        api api-prod mlflow \
-        infra-up infra-down infra-logs infra-clean \
-        seed \
-        stack-up stack-dev stack-down stack-clean \
-        docker-build docker-rebuild docker-up docker-dev docker-down docker-logs docker-mlflow docker-clean \
-        test test-cov coverage lint format format-check lint-fix \
-        clean clean-models clean-all \
-        ci ci-lint ci-test \
-        demo demo-predict demo-quick
+.PHONY: help \
+        install setup \
+        train experiment \
+        runs register models promote \
+        api \
+        up dev down logs clean \
+        test lint ci \
+        seed predict
 
 #==============================================================================
 # HELP
@@ -64,279 +46,162 @@ DEFAULT_PREPROC := v1_median
 help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "Targets:"
-	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@echo "\033[1mSETUP\033[0m"
+	@echo "  \033[36minstall\033[0m          Install dependencies"
+	@echo "  \033[36msetup\033[0m            Install dependencies + create directories"
+	@echo ""
+	@echo "\033[1mTRAINING\033[0m"
+	@echo "  \033[36mtrain\033[0m            Train model (supports --model-type, --cv, --interactive)"
+	@echo "  \033[36mexperiment\033[0m       Run experiment grid from YAML config"
+	@echo ""
+	@echo "\033[1mMODEL MANAGEMENT\033[0m"
+	@echo "  \033[36mruns\033[0m             List MLflow experiment runs"
+	@echo "  \033[36mregister\033[0m         Register a run as model version (RUN_ID=xxx)"
+	@echo "  \033[36mmodels\033[0m           List registered model versions and aliases"
+	@echo "  \033[36mpromote\033[0m          Promote model version to production (VERSION=x)"
+	@echo ""
+	@echo "\033[1mAPI\033[0m"
+	@echo "  \033[36mapi\033[0m              Start API locally with hot-reload"
+	@echo ""
+	@echo "\033[1mDOCKER\033[0m"
+	@echo "  \033[36mup\033[0m               Start full stack (infra + API in containers)"
+	@echo "  \033[36mdev\033[0m              Start infrastructure only (for local API development)"
+	@echo "  \033[36mdown\033[0m             Stop all services"
+	@echo "  \033[36mlogs\033[0m             View service logs"
+	@echo "  \033[36mclean\033[0m            Stop services and remove volumes"
+	@echo ""
+	@echo "\033[1mTESTING & QUALITY\033[0m"
+	@echo "  \033[36mtest\033[0m             Run tests"
+	@echo "  \033[36mlint\033[0m             Run linter (ruff)"
+	@echo "  \033[36mci\033[0m               Run full CI pipeline (lint + test + docker build)"
+	@echo ""
+	@echo "\033[1mDEMO\033[0m"
+	@echo "  \033[36mseed\033[0m             Seed MLflow with pre-trained model"
+	@echo "  \033[36mpredict\033[0m          Make a sample prediction via API"
 
 #==============================================================================
-# INSTALLATION & SETUP
+# SETUP
 #==============================================================================
-install: ## Install production dependencies
-	uv sync --no-dev
+install: ## Install dependencies
+	uv sync
 
-install-dev: ## Install all dependencies (including dev)
-	uv sync --extra dev
-
-setup: install-dev ## Complete setup: install deps + create directories
-	@mkdir -p models
-	@mkdir -p data
+setup: install ## Install dependencies + create directories
+	@mkdir -p models data
 	@echo "Setup complete!"
 
 #==============================================================================
 # TRAINING
 #==============================================================================
-train: ## Train model with default settings
+train: ## Train model (supports --model-type, --cv, --interactive)
 	$(CLI) train
 
-train-i: ## Train model interactively (select model and preprocessing)
-	$(CLI) train --interactive
-
-train-rf: ## Train Random Forest model
-	$(CLI) train --model-type random_forest --preprocessing $(DEFAULT_PREPROC)
-
-train-gb: ## Train Gradient Boost model
-	$(CLI) train --model-type gradient_boost --preprocessing $(DEFAULT_PREPROC)
-
-train-xgb: ## Train XGBoost model
-	$(CLI) train --model-type xgboost --preprocessing $(DEFAULT_PREPROC)
-
-train-linear: ## Train Linear Regression model
-	$(CLI) train --model-type linear --preprocessing $(DEFAULT_PREPROC)
-
-#==============================================================================
-# EXPERIMENTS (Grid Search)
-#==============================================================================
-experiment: experiment-models ## Run all models with default preprocessing
-
-experiment-models: ## Compare all models with default preprocessing
-	@echo "Running experiments with all models..."
-	@for model in $(MODELS); do \
-		echo "\n========== Training $$model =========="; \
-		$(CLI) train --model-type $$model --preprocessing $(DEFAULT_PREPROC) --register; \
-	done
-	@echo "\nAll experiments complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
-
-experiment-preproc: ## Compare all preprocessing strategies with default model
-	@echo "Running experiments with all preprocessing strategies..."
-	@for preproc in $(PREPROCESSINGS); do \
-		echo "\n========== Training with $$preproc =========="; \
-		$(CLI) train --model-type $(DEFAULT_MODEL) --preprocessing $$preproc --register; \
-	done
-	@echo "\nAll experiments complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
-
-experiment-all: ## Run full grid: all models x all preprocessing strategies
-	@echo "Running full experiment grid ($(words $(MODELS)) models x $(words $(PREPROCESSINGS)) preprocessings)..."
-	@for model in $(MODELS); do \
-		for preproc in $(PREPROCESSINGS); do \
-			echo "\n========== $$model + $$preproc =========="; \
-			$(CLI) train --model-type $$model --preprocessing $$preproc --register; \
-		done; \
-	done
-	@echo "\nFull grid complete! Check MLflow UI: http://localhost:$(MLFLOW_PORT)"
-
-experiment-yaml: ## Run experiments from YAML config (results in MLflow UI)
+experiment: ## Run experiment grid from YAML config
 	$(PYTHON) scripts/run_experiment.py --config src/experiments/config.yaml
-
-train-cv: ## Train with cross-validation enabled
-	$(CLI) train --cv --cv-splits 5
 
 #==============================================================================
 # MODEL MANAGEMENT
 #==============================================================================
-runs: ## List recent MLflow experiment runs
+runs: ## List MLflow experiment runs
 	$(CLI) runs
 
-register: ## Register an existing run as a model. Usage: make register RUN_ID=abc123
+register: ## Register a run as model version. Usage: make register RUN_ID=abc123
 ifndef RUN_ID
-	@echo "Error: RUN_ID is required. Usage: make register RUN_ID=abc123"
-	@echo "Tip: Use 'make runs' or MLflow UI to find run IDs"
+	@echo "Error: RUN_ID is required"
+	@echo "Usage: make register RUN_ID=abc123"
+	@echo ""
+	@echo "Tip: Use 'make runs' to find run IDs"
 	@exit 1
 endif
 	$(CLI) register $(RUN_ID)
 
-promote-list: ## List all model versions with their aliases
+models: ## List registered model versions and aliases
 	$(CLI) promote --list
 
-promote: ## Promote a model version to production. Usage: make promote VERSION=4
+promote: ## Promote model version to production. Usage: make promote VERSION=2
 ifndef VERSION
-	@echo "Error: VERSION is required. Usage: make promote VERSION=4"
+	@echo "Error: VERSION is required"
+	@echo "Usage: make promote VERSION=2"
+	@echo ""
+	@echo "Tip: Use 'make models' to see available versions"
 	@exit 1
 endif
 	$(CLI) promote --version $(VERSION)
 
 #==============================================================================
-# API & SERVICES
+# API
 #==============================================================================
-api: ## Start API with hot-reload (development)
-	$(UVICORN) $(SRC).api.main:app --reload --host $(API_HOST) --port $(API_PORT)
-
-api-prod: ## Start API in production mode (4 workers)
-	$(UVICORN) $(SRC).api.main:app --host $(API_HOST) --port $(API_PORT) --workers 4
-
-mlflow: ## Start MLflow UI locally
-	$(MLFLOW) ui --port $(MLFLOW_PORT)
-
-#==============================================================================
-# INFRASTRUCTURE (PostgreSQL + MinIO + MLflow)
-#==============================================================================
-infra-up: ## Start infrastructure services (postgres, minio, mlflow)
-	$(COMPOSE) up -d postgres minio minio-init mlflow
-	@echo "Waiting for services to be healthy..."
-	@sleep 5
-	@echo "Infrastructure ready!"
-	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
-	@echo "  MinIO Console: http://localhost:9001"
-
-infra-down: ## Stop infrastructure services
-	$(COMPOSE) stop postgres minio mlflow
-
-infra-logs: ## View infrastructure logs
-	$(COMPOSE) logs -f postgres minio mlflow
-
-infra-clean: ## Stop infrastructure and remove volumes (WARNING: deletes all data)
-	$(COMPOSE) down -v
-	@echo "Infrastructure cleaned (volumes removed)"
-
-#==============================================================================
-# SEED & MIGRATION
-#==============================================================================
-seed: ## Seed MLflow with pre-trained model from seed/
-	$(PYTHON) scripts/seed_mlflow.py
-
-#==============================================================================
-# FULL STACK
-#==============================================================================
-stack-up: infra-up ## Start full stack (infra + api)
-	$(COMPOSE) up -d api
-	@echo "Full stack running!"
-	@echo "  API:           http://localhost:$(API_PORT)"
-	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
-	@echo "  MinIO Console: http://localhost:9001"
-
-stack-dev: infra-up ## Start full stack in development mode (hot-reload)
-	$(COMPOSE) --profile dev up -d api-dev
-	@echo "Development stack running with hot-reload!"
-
-stack-down: ## Stop all services
-	$(COMPOSE) --profile dev down
-
-stack-clean: ## Stop all services and remove volumes
-	$(COMPOSE) --profile dev down -v
-	@echo "Stack cleaned (all volumes removed)"
+api: ## Start API locally with hot-reload
+	$(UVICORN) $(SRC).api.main:app --reload --host 0.0.0.0 --port $(API_PORT)
 
 #==============================================================================
 # DOCKER
 #==============================================================================
-docker-build: ## Build Docker image
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+up: ## Start full stack (infra + API in containers)
+	$(COMPOSE) up -d postgres minio minio-init mlflow
+	@echo "Waiting for infrastructure..."
+	@sleep 5
+	$(COMPOSE) up -d api
+	@echo ""
+	@echo "Stack ready!"
+	@echo "  API:           http://localhost:$(API_PORT)"
+	@echo "  API Docs:      http://localhost:$(API_PORT)/docs"
+	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
+	@echo "  MinIO Console: http://localhost:9001"
 
-docker-rebuild: ## Rebuild Docker images without cache
-	$(COMPOSE) build --no-cache
+dev: ## Start infrastructure only (for local API development)
+	$(COMPOSE) up -d postgres minio minio-init mlflow
+	@echo "Waiting for infrastructure..."
+	@sleep 5
+	@echo ""
+	@echo "Infrastructure ready!"
+	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
+	@echo "  MinIO Console: http://localhost:9001"
+	@echo ""
+	@echo "Now run: make api"
 
-docker-up: stack-up ## Start full stack (alias for stack-up)
+down: ## Stop all services
+	$(COMPOSE) down
 
-docker-dev: stack-dev ## Start dev stack (alias for stack-dev)
-
-docker-down: stack-down ## Stop all services (alias for stack-down)
-
-docker-logs: ## View all service logs (follow mode)
+logs: ## View service logs
 	$(COMPOSE) logs -f
 
-docker-mlflow: infra-up ## Start only infrastructure (alias for infra-up)
-
-docker-clean: stack-clean ## Stop services and remove volumes (alias for stack-clean)
+clean: ## Stop services and remove volumes (WARNING: deletes all data)
+	$(COMPOSE) down -v
+	@echo "All services stopped and volumes removed"
 
 #==============================================================================
-# TESTING & CODE QUALITY
+# TESTING & QUALITY
 #==============================================================================
 test: ## Run tests
 	$(PYTEST) $(TESTS)/ -v
 
-test-cov: ## Run tests with coverage report
-	$(PYTEST) $(TESTS)/ -v --cov=$(SRC) --cov-report=term-missing
+lint: ## Run linter (ruff)
+	$(RUFF) check $(SRC)/ $(TESTS)/
+	$(RUFF) format --check $(SRC)/ $(TESTS)/
 
-coverage: ## Run tests with minimum 70% coverage requirement
+ci: ## Run full CI pipeline (lint + test + docker build)
+	@echo "=== Running CI Pipeline ==="
+	@echo ""
+	@echo "1. Linting..."
+	$(RUFF) check $(SRC)/ $(TESTS)/
+	$(RUFF) format --check $(SRC)/ $(TESTS)/
+	@echo ""
+	@echo "2. Testing..."
 	$(PYTEST) $(TESTS)/ -v --cov=$(SRC) --cov-report=term-missing --cov-fail-under=70
-
-lint: ## Run linter (ruff check)
-	$(RUFF) check $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-
-format: ## Format code (ruff format)
-	$(RUFF) format $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-
-format-check: ## Check code formatting without changes
-	$(RUFF) format --check $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-
-lint-fix: ## Fix linting errors automatically
-	$(RUFF) check --fix $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-
-#==============================================================================
-# CLEANUP
-#==============================================================================
-clean: ## Clean generated files (cache, coverage, etc.)
-	rm -rf __pycache__ .pytest_cache .ruff_cache .coverage htmlcov/
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	find . -type f -name ".coverage" -delete 2>/dev/null || true
-
-clean-models: ## Clean local model files
-	rm -rf models/*.joblib models/*.pkl
-	@echo "Model files cleaned"
-
-clean-all: clean clean-models docker-clean ## Full cleanup (cache + models + docker)
-	@echo "Full cleanup complete"
-
-#==============================================================================
-# CI/CD
-#==============================================================================
-ci-lint: ## Run CI linting (check + format check)
-	$(RUFF) check $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-	$(RUFF) format --check $(SRC)/ $(TESTS)/ $(TRAIN_SCRIPT)
-
-ci-test: ## Run CI tests with coverage
-	$(PYTEST) $(TESTS)/ -v --cov=$(SRC) --cov-report=term-missing --cov-fail-under=70
-
-ci: ci-lint ci-test docker-build ## Run full CI pipeline (lint + test + build)
-	@echo "CI pipeline complete!"
-
-#==============================================================================
-# DEMO (for presentation)
-#==============================================================================
-demo: ## Run demo flow: train -> show info
-	@echo "=== DEMO: Housing Price Prediction ==="
 	@echo ""
-	@echo "1. Training model..."
-	$(CLI) train --model-type random_forest --preprocessing v1_median --register
+	@echo "3. Building Docker image..."
+	docker build -t housing-api:latest .
 	@echo ""
-	@echo "2. Model info:"
-	$(CLI) info
-	@echo ""
-	@echo "3. To start the API, run: make api"
-	@echo "4. Then test with: make demo-predict"
+	@echo "=== CI Pipeline Complete ==="
 
-demo-predict: ## Make a sample prediction via API
-	@echo "Making prediction request..."
+#==============================================================================
+# DEMO
+#==============================================================================
+seed: ## Seed MLflow with pre-trained model
+	$(PYTHON) scripts/seed_mlflow.py
+
+predict: ## Make a sample prediction via API
 	@curl -s -X POST http://localhost:$(API_PORT)/predict \
 		-H "Content-Type: application/json" \
 		-H "X-API-Key: dev-api-key" \
 		-d '{"CRIM":0.00632,"ZN":18.0,"INDUS":2.31,"CHAS":0,"NOX":0.538,"RM":6.575,"AGE":65.2,"DIS":4.09,"RAD":1,"TAX":296.0,"PTRATIO":15.3,"B":396.9,"LSTAT":4.98}' | $(PYTHON) -m json.tool
-
-demo-quick: ## Quick demo: start infra + seed + API (for presentation)
-	@echo "=== QUICK DEMO: Full MLOps Stack ==="
-	@echo ""
-	@echo "1. Starting infrastructure (PostgreSQL + MinIO + MLflow)..."
-	$(MAKE) infra-up
-	@sleep 10
-	@echo ""
-	@echo "2. Seeding with pre-trained model..."
-	$(MAKE) seed
-	@echo ""
-	@echo "3. Starting API..."
-	$(COMPOSE) up -d api
-	@echo ""
-	@echo "=== DEMO READY ==="
-	@echo "  API:           http://localhost:$(API_PORT)"
-	@echo "  API Docs:      http://localhost:$(API_PORT)/docs"
-	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
-	@echo "  MinIO Console: http://localhost:9001 (minioadmin/minioadmin123)"
-	@echo ""
-	@echo "Test with: make demo-predict"

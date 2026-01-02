@@ -89,9 +89,7 @@ def train_single_experiment(
 
         # Log hyperparameters
         if config.hyperparameters:
-            mlflow.log_params(
-                {f"hp_{k}": v for k, v in config.hyperparameters.items()}
-            )
+            mlflow.log_params({f"hp_{k}": v for k, v in config.hyperparameters.items()})
 
         # Create and train model
         model = ModelFactory.create(config.model_type)
@@ -110,7 +108,10 @@ def train_single_experiment(
         test_result = evaluate_model(model.model, X_test_transformed, y_test.values)
 
         # Log metrics
-        for prefix, metrics in [("train", train_result["metrics"]), ("test", test_result["metrics"])]:
+        for prefix, metrics in [
+            ("train", train_result["metrics"]),
+            ("test", test_result["metrics"]),
+        ]:
             for name, value in metrics.items():
                 mlflow.log_metric(f"{prefix}_{name}", value)
 

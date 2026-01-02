@@ -199,7 +199,9 @@ class TestBatchPredictEndpoint:
 
         assert response.status_code == 422
 
-    def test_batch_predict_invalid_item_rejects_all(self, sample_features_dict, mock_artifact_bundle):
+    def test_batch_predict_invalid_item_rejects_all(
+        self, sample_features_dict, mock_artifact_bundle
+    ):
         """One invalid item rejects entire batch."""
         from fastapi.testclient import TestClient
 
@@ -212,7 +214,9 @@ class TestBatchPredictEndpoint:
 
         assert response.status_code == 422
 
-    def test_batch_predict_includes_warnings(self, sample_features_dict, feature_stats, mock_artifact_bundle):
+    def test_batch_predict_includes_warnings(
+        self, sample_features_dict, feature_stats, mock_artifact_bundle
+    ):
         """Batch predictions include per-item warnings."""
         import numpy as np
         from fastapi.testclient import TestClient

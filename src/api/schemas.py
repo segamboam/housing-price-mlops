@@ -263,15 +263,11 @@ class BatchPredictionItem(BaseModel):
 class BatchPredictionResponse(BaseModel):
     """Response para predicciones en lote."""
 
-    predictions: list[BatchPredictionItem] = Field(
-        ..., description="Lista de predicciones"
-    )
+    predictions: list[BatchPredictionItem] = Field(..., description="Lista de predicciones")
     model_version: str = Field(..., description="Versión del modelo utilizado")
     model_type: str | None = Field(None, description="Tipo de modelo")
     total_items: int = Field(..., description="Total de items procesados")
-    processing_time_ms: float = Field(
-        ..., description="Tiempo de procesamiento en milisegundos"
-    )
+    processing_time_ms: float = Field(..., description="Tiempo de procesamiento en milisegundos")
 
     model_config = {
         "json_schema_extra": {
@@ -321,9 +317,7 @@ class ModelReloadResponse(BaseModel):
         None, description="Info del modelo actual después de la recarga"
     )
     message: str = Field(..., description="Mensaje descriptivo de la operación")
-    reload_time_ms: float = Field(
-        ..., description="Tiempo de recarga en milisegundos"
-    )
+    reload_time_ms: float = Field(..., description="Tiempo de recarga en milisegundos")
 
     model_config = {
         "json_schema_extra": {

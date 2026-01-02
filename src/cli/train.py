@@ -360,9 +360,7 @@ def train(
     should_register = register
     if interactive:
         console.print()
-        should_register = confirm_action(
-            "Register this model in MLflow Registry?", default=False
-        )
+        should_register = confirm_action("Register this model in MLflow Registry?", default=False)
 
     # Register model if requested
     registered_version = None
@@ -390,7 +388,9 @@ def train(
         # Add tags to model version for filtering
         client.set_model_version_tag(model_name, registered_version, "model_type", model_type)
         client.set_model_version_tag(model_name, registered_version, "preprocessing", preprocessing)
-        client.set_model_version_tag(model_name, registered_version, "test_r2", f"{test_result['metrics']['r2']:.4f}")
+        client.set_model_version_tag(
+            model_name, registered_version, "test_r2", f"{test_result['metrics']['r2']:.4f}"
+        )
 
         console.print(
             f"[green]Model registered as {model_name} v{registered_version}[/green]\n"
