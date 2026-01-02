@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pandas as pd
 
-EXPECTED_COLUMNS = [
+# Feature columns used for model training
+FEATURE_COLUMNS = [
     "CRIM",
     "ZN",
     "INDUS",
@@ -16,8 +17,13 @@ EXPECTED_COLUMNS = [
     "PTRATIO",
     "B",
     "LSTAT",
-    "MEDV",
 ]
+
+# Target column for prediction
+TARGET_COLUMN = "MEDV"
+
+# All expected columns in the dataset (features + target)
+EXPECTED_COLUMNS = FEATURE_COLUMNS + [TARGET_COLUMN]
 
 
 def load_housing_data(file_path: str | Path) -> pd.DataFrame:

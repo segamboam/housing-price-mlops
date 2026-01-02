@@ -67,7 +67,7 @@ def seed_mlflow() -> None:
     print(f"  Test R2: {metadata.get('test_metrics', {}).get('r2', 'N/A'):.4f}")
 
     # Create/get experiment
-    experiment_name = "housing-price-prediction"
+    experiment_name = settings.mlflow_experiment_name
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
         experiment_id = client.create_experiment(experiment_name)

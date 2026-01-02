@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     # Prometheus Settings
     metrics_enabled: bool = True
 
+    # ML Defaults
+    default_model_type: str = "gradient_boost"
+    default_preprocessing: str = "v2_knn"
+    default_test_size: float = 0.2
+    default_random_state: int = 42
+    default_cv_splits: int = 5
+
+    # MLflow Experiment
+    mlflow_experiment_name: str = "housing-price-prediction"
+
+    # Data
+    data_path: Path = Path("data/HousingData.csv")
+
     @property
     def model_path(self) -> Path:
         """Path to the model file."""

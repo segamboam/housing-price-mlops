@@ -1,27 +1,22 @@
 """Single experiment training function."""
 
-import hashlib
 import time
 
-import pandas as pd
 from sklearn.model_selection import train_test_split
 
 import mlflow
+
+# Import strategies to register them with factories
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
 from src.config.settings import get_settings
-from src.data.loader import load_housing_data
-from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
+from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
 from src.data.preprocessing.factory import PreprocessorFactory
 from src.experiments.runner import ExperimentConfig, ExperimentResult
 from src.models.cross_validation import perform_cross_validation
 from src.models.evaluate import evaluate_model
 from src.models.factory import ModelFactory
-
-
-def compute_dataset_hash(df: pd.DataFrame) -> str:
-    """Compute a hash of the dataset for versioning."""
-    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()[:12]
+from src.utils import compute_dataset_hash
 
 
 def train_single_experiment(
@@ -43,7 +38,7 @@ def train_single_experiment(
     settings = get_settings()
     settings.configure_mlflow_s3()
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment("housing-experiments")
+    mlflow.set_experiment(settings.mlflow_experiment_name)
 
     # Load data
     df = load_housing_data(data_path)

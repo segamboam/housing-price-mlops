@@ -106,10 +106,6 @@ def mock_artifact_bundle(monkeypatch):
         "src.api.main.load_artifact_bundle",
         lambda: (mock_bundle, "bundle"),
     )
-    monkeypatch.setattr(
-        "src.api.main.load_legacy_local_model",
-        lambda: (None, None, None),
-    )
 
     # Also set the global directly for tests that don't trigger lifespan
     monkeypatch.setattr("src.api.main.artifact_bundle", mock_bundle)

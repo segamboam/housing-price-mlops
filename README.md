@@ -117,7 +117,7 @@ meli_challenge/
 │   │   └── config.yaml         # Configuración YAML de ejemplo
 │   │
 │   ├── data/                   # Carga y preprocesamiento
-│   │   ├── loader.py           # Carga y validación
+│   │   ├── loader.py           # Carga, validación y columnas
 │   │   └── preprocessing/      # Estrategias de preprocesamiento
 │   │       ├── base.py
 │   │       ├── factory.py
@@ -130,8 +130,11 @@ meli_challenge/
 │   │   ├── bundle.py           # MLArtifactBundle
 │   │   └── metadata.py         # Metadatos del modelo
 │   │
-│   └── config/                 # Configuración
-│       └── settings.py         # Settings con pydantic-settings
+│   ├── config/                 # Configuración centralizada
+│   │   └── settings.py         # Settings (API, ML, MLflow)
+│   │
+│   └── utils/                  # Utilidades compartidas
+│       └── hashing.py          # Hash de datasets
 │
 ├── data/                       # Dataset
 │   └── HousingData.csv
@@ -144,7 +147,6 @@ meli_challenge/
 │   ├── run_experiment.py       # CLI para experimentos
 │   └── seed_mlflow.py          # Seed de MLflow
 │
-├── train.py                    # Script principal de entrenamiento
 ├── Dockerfile                  # Imagen Docker
 ├── docker-compose.yml          # Orquestación de servicios
 ├── Makefile                    # Comandos unificados
@@ -215,28 +217,30 @@ Variables disponibles:
 #### Entrenamiento básico
 
 ```bash
-# Con make
+# Con make (usa defaults de settings.py)
 make train
 
-# O directamente
-uv run python train.py
+# O directamente con CLI
+uv run meli train
+
+# Modo interactivo (seleccionar modelo, preprocessing, hyperparams)
+make train-i
 ```
 
 #### Opciones de entrenamiento
 
 ```bash
-# Seleccionar modelo
-make train-rf    # Random Forest (default)
+# Seleccionar modelo específico
+make train-rf    # Random Forest
 make train-gb    # Gradient Boosting
 make train-xgb   # XGBoost
 make train-linear # Linear Regression
 
-# Personalizar parámetros
-uv run python train.py \
+# Personalizar parámetros vía CLI
+uv run meli train \
     --model-type random_forest \
     --preprocessing v2_knn \
-    --test-size 0.2 \
-    --random-state 42
+    --cv --cv-splits 5
 ```
 
 #### Ejecutar experimentos completos

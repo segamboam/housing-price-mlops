@@ -1,15 +1,15 @@
 """CLI command to train a model."""
 
-import hashlib
 from pathlib import Path
 
-import pandas as pd
 import typer
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from sklearn.model_selection import train_test_split
 
 import mlflow
 import mlflow.sklearn
+
+# Import strategies to register them with factories
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
 from mlflow.models import infer_signature
@@ -27,57 +27,55 @@ from src.cli.utils import (
     success_panel,
 )
 from src.config.settings import get_settings
-from src.data.loader import get_data_summary, load_housing_data
-from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
+from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, get_data_summary, load_housing_data
 from src.data.preprocessing.factory import PreprocessorFactory
 from src.models.cross_validation import CVResult, perform_cross_validation
 from src.models.evaluate import evaluate_model, generate_evaluation_report, save_report
 from src.models.factory import ModelFactory
+from src.utils import compute_dataset_hash
 
-
-def compute_dataset_hash(df: pd.DataFrame) -> str:
-    """Compute a hash of the dataset for versioning."""
-    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()[:12]
+# Get settings for defaults
+_settings = get_settings()
 
 
 def train(
     model_type: str = typer.Option(
-        "gradient_boost",
+        _settings.default_model_type,
         "--model-type",
         "-m",
         help=f"Model type: {', '.join(ModelFactory.list_available())}",
     ),
     preprocessing: str = typer.Option(
-        "v2_knn",
+        _settings.default_preprocessing,
         "--preprocessing",
         "-p",
         help=f"Preprocessing strategy: {', '.join(PreprocessorFactory.list_available())}",
     ),
     experiment_name: str = typer.Option(
-        "housing-price-prediction",
+        _settings.mlflow_experiment_name,
         "--experiment",
         "-e",
         help="MLflow experiment name",
     ),
     data_path: Path = typer.Option(
-        Path("data/HousingData.csv"),
+        _settings.data_path,
         "--data",
         "-d",
         help="Path to training data CSV",
     ),
     output_dir: Path = typer.Option(
-        Path("models"),
+        _settings.model_dir,
         "--output",
         "-o",
         help="Directory to save model artifacts",
     ),
     test_size: float = typer.Option(
-        0.2,
+        _settings.default_test_size,
         "--test-size",
         help="Proportion of data for testing",
     ),
     random_state: int = typer.Option(
-        42,
+        _settings.default_random_state,
         "--seed",
         help="Random seed for reproducibility",
     ),
@@ -89,7 +87,7 @@ def train(
     tracking_uri: str | None = typer.Option(
         None,
         "--tracking-uri",
-        help="MLflow tracking URI (defaults to MLFLOW_TRACKING_URI or http://localhost:5000)",
+        help="MLflow tracking URI (defaults to MLFLOW_TRACKING_URI)",
     ),
     interactive: bool = typer.Option(
         False,
@@ -100,10 +98,10 @@ def train(
     enable_cv: bool = typer.Option(
         False,
         "--cv/--no-cv",
-        help="Enable 5-fold cross-validation",
+        help="Enable cross-validation",
     ),
     cv_splits: int = typer.Option(
-        5,
+        _settings.default_cv_splits,
         "--cv-splits",
         help="Number of cross-validation folds",
     ),

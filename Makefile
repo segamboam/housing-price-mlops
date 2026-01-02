@@ -18,7 +18,6 @@ CLI := $(PYTHON) -m src.cli.main
 # Paths
 SRC := src
 TESTS := tests
-TRAIN_SCRIPT := train.py
 DATA := data/HousingData.csv
 
 # Docker
@@ -86,7 +85,7 @@ setup: install-dev ## Complete setup: install deps + create directories
 # TRAINING
 #==============================================================================
 train: ## Train model with default settings
-	$(PYTHON) $(TRAIN_SCRIPT)
+	$(CLI) train
 
 train-i: ## Train model interactively (select model and preprocessing)
 	$(CLI) train --interactive
