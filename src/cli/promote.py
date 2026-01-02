@@ -2,10 +2,10 @@
 
 from datetime import datetime
 
-import mlflow
 import typer
-from mlflow import MlflowClient
 
+import mlflow
+from mlflow import MlflowClient
 from src.cli.utils import console, create_versions_table, error_panel, success_panel
 from src.config.settings import get_settings
 

@@ -50,11 +50,14 @@ DEFAULT_PREPROC := v1_median
         experiment experiment-all experiment-models experiment-preproc \
         promote-list promote \
         api api-prod mlflow \
-        docker-build docker-up docker-dev docker-down docker-logs docker-mlflow docker-clean \
+        infra-up infra-down infra-logs infra-clean \
+        seed \
+        stack-up stack-dev stack-down stack-clean \
+        docker-build docker-rebuild docker-up docker-dev docker-down docker-logs docker-mlflow docker-clean \
         test test-cov coverage lint format format-check lint-fix \
         clean clean-models clean-all \
         ci ci-lint ci-test \
-        demo demo-predict
+        demo demo-predict demo-quick
 
 #==============================================================================
 # HELP
@@ -157,28 +160,74 @@ mlflow: ## Start MLflow UI locally
 	$(MLFLOW) ui --port $(MLFLOW_PORT)
 
 #==============================================================================
+# INFRASTRUCTURE (PostgreSQL + MinIO + MLflow)
+#==============================================================================
+infra-up: ## Start infrastructure services (postgres, minio, mlflow)
+	$(COMPOSE) up -d postgres minio minio-init mlflow
+	@echo "Waiting for services to be healthy..."
+	@sleep 5
+	@echo "Infrastructure ready!"
+	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
+	@echo "  MinIO Console: http://localhost:9001"
+
+infra-down: ## Stop infrastructure services
+	$(COMPOSE) stop postgres minio mlflow
+
+infra-logs: ## View infrastructure logs
+	$(COMPOSE) logs -f postgres minio mlflow
+
+infra-clean: ## Stop infrastructure and remove volumes (WARNING: deletes all data)
+	$(COMPOSE) down -v
+	@echo "Infrastructure cleaned (volumes removed)"
+
+#==============================================================================
+# SEED & MIGRATION
+#==============================================================================
+seed: ## Seed MLflow with pre-trained model from seed/
+	$(PYTHON) scripts/seed_mlflow.py
+
+#==============================================================================
+# FULL STACK
+#==============================================================================
+stack-up: infra-up ## Start full stack (infra + api)
+	$(COMPOSE) up -d api
+	@echo "Full stack running!"
+	@echo "  API:           http://localhost:$(API_PORT)"
+	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
+	@echo "  MinIO Console: http://localhost:9001"
+
+stack-dev: infra-up ## Start full stack in development mode (hot-reload)
+	$(COMPOSE) --profile dev up -d api-dev
+	@echo "Development stack running with hot-reload!"
+
+stack-down: ## Stop all services
+	$(COMPOSE) --profile dev down
+
+stack-clean: ## Stop all services and remove volumes
+	$(COMPOSE) --profile dev down -v
+	@echo "Stack cleaned (all volumes removed)"
+
+#==============================================================================
 # DOCKER
 #==============================================================================
 docker-build: ## Build Docker image
 	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-docker-up: ## Start production services (api + mlflow)
-	$(COMPOSE) up -d
+docker-rebuild: ## Rebuild Docker images without cache
+	$(COMPOSE) build --no-cache
 
-docker-dev: ## Start development services (with hot-reload)
-	$(COMPOSE) --profile dev up -d api-dev mlflow
+docker-up: stack-up ## Start full stack (alias for stack-up)
 
-docker-down: ## Stop all services
-	$(COMPOSE) --profile dev down
+docker-dev: stack-dev ## Start dev stack (alias for stack-dev)
 
-docker-logs: ## View service logs (follow mode)
+docker-down: stack-down ## Stop all services (alias for stack-down)
+
+docker-logs: ## View all service logs (follow mode)
 	$(COMPOSE) logs -f
 
-docker-mlflow: ## Start only MLflow service
-	$(COMPOSE) up -d mlflow
+docker-mlflow: infra-up ## Start only infrastructure (alias for infra-up)
 
-docker-clean: ## Stop services and remove volumes
-	$(COMPOSE) --profile dev down -v
+docker-clean: stack-clean ## Stop services and remove volumes (alias for stack-clean)
 
 #==============================================================================
 # TESTING & CODE QUALITY
@@ -254,3 +303,24 @@ demo-predict: ## Make a sample prediction via API
 		-H "Content-Type: application/json" \
 		-H "X-API-Key: dev-api-key" \
 		-d '{"CRIM":0.00632,"ZN":18.0,"INDUS":2.31,"CHAS":0,"NOX":0.538,"RM":6.575,"AGE":65.2,"DIS":4.09,"RAD":1,"TAX":296.0,"PTRATIO":15.3,"B":396.9,"LSTAT":4.98}' | $(PYTHON) -m json.tool
+
+demo-quick: ## Quick demo: start infra + seed + API (for presentation)
+	@echo "=== QUICK DEMO: Full MLOps Stack ==="
+	@echo ""
+	@echo "1. Starting infrastructure (PostgreSQL + MinIO + MLflow)..."
+	$(MAKE) infra-up
+	@sleep 10
+	@echo ""
+	@echo "2. Seeding with pre-trained model..."
+	$(MAKE) seed
+	@echo ""
+	@echo "3. Starting API..."
+	$(COMPOSE) up -d api
+	@echo ""
+	@echo "=== DEMO READY ==="
+	@echo "  API:           http://localhost:$(API_PORT)"
+	@echo "  API Docs:      http://localhost:$(API_PORT)/docs"
+	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
+	@echo "  MinIO Console: http://localhost:9001 (minioadmin/minioadmin123)"
+	@echo ""
+	@echo "Test with: make demo-predict"

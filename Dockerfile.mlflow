@@ -1,8 +1,15 @@
-FROM python:3.12-slim
+# MLflow server with PostgreSQL and S3 support
+# Based on official MLflow image which doesn't include these drivers by default
+# See: https://github.com/mlflow/mlflow/issues/9513
+FROM ghcr.io/mlflow/mlflow:v3.8.1
 
-# Install MLflow matching local version
-RUN pip install --no-cache-dir mlflow==3.8.1
+USER root
+
+# Install curl for healthcheck and PostgreSQL driver + boto3 for S3/MinIO
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir \
+    psycopg2-binary==2.9.10 \
+    boto3==1.35.0
 
 EXPOSE 5000
-
-CMD ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000"]

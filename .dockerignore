@@ -31,6 +31,10 @@ data/
 *.md
 !README.md
 
+# MLflow local data (legacy - not needed in Docker)
+mlflow.db
+mlruns/
+
 # Temporary files
 *.log
 *.tmp

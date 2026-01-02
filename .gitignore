@@ -14,21 +14,18 @@ wheels/
 
 .env
 
-# MLflow
-# NOTA: mlflow.db y mlruns/ están incluidos en el repo para facilitar la evaluación
-# de la prueba técnica (demo funcional out-of-the-box).
-# En un ambiente real de producción, estos archivos NO deberían versionarse:
-# mlflow.db
-# mlruns/
+# MLflow local data (legacy - now using PostgreSQL + MinIO)
+# These files are kept as backup but no longer used in the new architecture
+mlflow.db
+mlruns/
 
-*.pdf
-
+# Claude Code
 .claude
 
+# Personal files
 CHECKLIST.md
 .coverage
 PLAN_MLOPS.md
-
 *.docx
 
-
+*.pdf

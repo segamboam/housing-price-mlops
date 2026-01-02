@@ -3,16 +3,16 @@
 import hashlib
 from pathlib import Path
 
-import mlflow
-import mlflow.sklearn
 import pandas as pd
 import typer
-from mlflow.models import infer_signature
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from sklearn.model_selection import train_test_split
 
+import mlflow
+import mlflow.sklearn
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
+from mlflow.models import infer_signature
 from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,
@@ -23,6 +23,7 @@ from src.cli.utils import (
     select_option,
     success_panel,
 )
+from src.config.settings import get_settings
 from src.data.loader import get_data_summary, load_housing_data
 from src.data.preprocessing import FEATURE_COLUMNS, TARGET_COLUMN
 from src.data.preprocessing.factory import PreprocessorFactory
@@ -81,10 +82,10 @@ def train(
         "--register/--no-register",
         help="Register model in MLflow Registry",
     ),
-    tracking_uri: str = typer.Option(
-        "sqlite:///mlflow.db",
+    tracking_uri: str | None = typer.Option(
+        None,
         "--tracking-uri",
-        help="MLflow tracking URI",
+        help="MLflow tracking URI (defaults to MLFLOW_TRACKING_URI or http://localhost:5000)",
     ),
     interactive: bool = typer.Option(
         False,
@@ -138,8 +139,13 @@ def train(
         console.print(error_panel(f"Data file not found: {data_path}"))
         raise typer.Exit(1)
 
-    # Configure MLflow
-    mlflow.set_tracking_uri(tracking_uri)
+    # Configure MLflow with S3/MinIO credentials
+    settings = get_settings()
+    settings.configure_mlflow_s3()
+
+    # Use provided tracking URI or fall back to settings
+    effective_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
+    mlflow.set_tracking_uri(effective_tracking_uri)
     mlflow.set_experiment(experiment_name)
 
     with Progress(
@@ -286,6 +292,6 @@ def train(
     result_info = f"""[bold]Run ID:[/bold] {run.info.run_id[:8]}...
 [bold]Artifact ID:[/bold] {bundle.metadata.artifact_id[:8]}...
 [bold]Bundle saved:[/bold] {bundle_path}
-[bold]MLflow UI:[/bold] mlflow ui --backend-store-uri {tracking_uri}"""
+[bold]MLflow UI:[/bold] {effective_tracking_uri}"""
 
     console.print(success_panel(result_info, title="Training Complete"))

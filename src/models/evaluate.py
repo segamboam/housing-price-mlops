@@ -81,6 +81,19 @@ def generate_evaluation_report(
     return report
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles NumPy types."""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 def save_report(report: dict, output_path: str | Path) -> Path:
     """Save evaluation report to JSON file.
 
@@ -95,7 +108,7 @@ def save_report(report: dict, output_path: str | Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "w") as f:
-        json.dump(report, f, indent=2)
+        json.dump(report, f, indent=2, cls=NumpyEncoder)
 
     return output_path
 

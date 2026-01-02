@@ -13,6 +13,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project && \
     chown -R appuser:appuser /app/.venv
 
+# Create models directory and set permissions before switching user
+RUN mkdir -p ./models/artifact_bundle && \
+    chown -R appuser:appuser ./models
+
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
@@ -21,12 +25,9 @@ USER appuser
 
 # Copy application code (as appuser)
 COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser models/ ./models/
 
-# Copy MLflow data for demo purposes (pre-trained experiments)
-# NOTE: In production, MLflow data should NOT be in the image
-COPY --chown=appuser:appuser mlflow.db ./mlflow.db
-COPY --chown=appuser:appuser mlruns/ ./mlruns/
+# Copy seed bundle for fallback (pre-trained model)
+COPY --chown=appuser:appuser seed/ ./seed/
 
 EXPOSE 8000
 
