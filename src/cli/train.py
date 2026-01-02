@@ -301,7 +301,7 @@ def train() -> None:
         model_uri = f"runs:/{run_id}/sklearn_{model_type}"
         model_name = settings.mlflow_model_name
 
-        # Register the model (no alias - use 'meli promote' to assign production)
+        # Register the model (no alias - use 'make promote' to assign production)
         result = mlflow.register_model(model_uri, model_name)
         registered_version = result.version
 
@@ -327,7 +327,7 @@ def train() -> None:
 
         console.print(
             f"[green]Model registered as {model_name} v{registered_version}[/green]\n"
-            f"[dim]Use 'uv run meli promote --version {registered_version} --alias production' "
+            f"[dim]Use 'make promote VERSION={registered_version}' "
             f"to promote[/dim]"
         )
 

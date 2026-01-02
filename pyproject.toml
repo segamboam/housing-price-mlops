@@ -33,9 +33,6 @@ dev = [
     "ruff>=0.8.0,<0.9.0",
 ]
 
-[project.scripts]
-housing = "src.cli.main:app"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

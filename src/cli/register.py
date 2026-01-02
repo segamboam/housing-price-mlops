@@ -33,8 +33,8 @@ def register(
     trained without --register flag.
 
     Example:
-        uv run meli register abc123def
-        uv run meli register abc123def --model-name my-model
+        uv run python -m src.cli.main register abc123def
+        uv run python -m src.cli.main register abc123def --model-name my-model
     """
     # Configure MLflow
     settings.configure_mlflow_s3()
@@ -95,7 +95,7 @@ def register(
             console.print(
                 error_panel(
                     "This run doesn't have an artifact_bundle.\n"
-                    "Only runs from 'meli train' can be registered.\n"
+                    "Only runs from 'make train' can be registered.\n"
                     "Experiment runs don't include the preprocessor bundle."
                 )
             )
@@ -141,7 +141,7 @@ def register(
             success_panel(
                 f"Registered as {effective_model_name} v{version}\n\n"
                 f"To promote to production:\n"
-                f"  uv run meli promote --version {version} --alias production",
+                f"  make promote VERSION={version}",
                 title="Registration Complete",
             )
         )
