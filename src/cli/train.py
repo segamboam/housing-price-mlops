@@ -1,7 +1,6 @@
 """CLI command to train a model."""
 
 from datetime import datetime
-from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
@@ -39,101 +38,40 @@ from src.utils import compute_dataset_hash
 _settings = get_settings()
 
 
-def train(
-    model_type: str = typer.Option(
-        _settings.default_model_type,
-        "--model-type",
-        "-m",
-        help=f"Model type: {', '.join(ModelFactory.list_available())}",
-    ),
-    preprocessing: str = typer.Option(
-        _settings.default_preprocessing,
-        "--preprocessing",
-        "-p",
-        help=f"Preprocessing strategy: {', '.join(PreprocessorFactory.list_available())}",
-    ),
-    experiment_name: str = typer.Option(
-        _settings.mlflow_experiment_name,
-        "--experiment",
-        "-e",
-        help="MLflow experiment name",
-    ),
-    data_path: Path = typer.Option(
-        _settings.data_path,
-        "--data",
-        "-d",
-        help="Path to training data CSV",
-    ),
-    output_dir: Path = typer.Option(
-        _settings.model_dir,
-        "--output",
-        "-o",
-        help="Directory to save model artifacts",
-    ),
-    test_size: float = typer.Option(
-        _settings.default_test_size,
-        "--test-size",
-        help="Proportion of data for testing",
-    ),
-    random_state: int = typer.Option(
-        _settings.default_random_state,
-        "--seed",
-        help="Random seed for reproducibility",
-    ),
-    register: bool = typer.Option(
-        True,
-        "--register/--no-register",
-        help="Register model in MLflow Registry",
-    ),
-    tracking_uri: str | None = typer.Option(
-        None,
-        "--tracking-uri",
-        help="MLflow tracking URI (defaults to MLFLOW_TRACKING_URI)",
-    ),
-    interactive: bool = typer.Option(
-        False,
-        "--interactive",
-        "-i",
-        help="Interactive mode: select model and preprocessing from menu",
-    ),
-    enable_cv: bool = typer.Option(
-        False,
-        "--cv/--no-cv",
-        help="Enable cross-validation",
-    ),
-    cv_splits: int = typer.Option(
-        _settings.default_cv_splits,
-        "--cv-splits",
-        help="Number of cross-validation folds",
-    ),
-) -> None:
-    """Train a housing price prediction model."""
-    # Interactive mode: prompt user for selections
+def train() -> None:
+    """Train a housing price prediction model interactively."""
+    console.print("\n[bold]🚀 Interactive Training Mode[/bold]")
+
+    # Interactive selections
+    model_type = select_option(
+        "Select model type:",
+        ModelFactory.list_available(),
+        default=_settings.default_model_type,
+    )
+
+    preprocessing = select_option(
+        "Select preprocessing strategy:",
+        PreprocessorFactory.list_available(),
+        default=_settings.default_preprocessing,
+    )
+
+    # Ask if user wants to configure hyperparameters
     custom_hyperparams: dict = {}
-    if interactive:
-        console.print("\n[bold]🚀 Interactive Training Mode[/bold]")
+    if confirm_action("Configure hyperparameters?", default=False):
+        custom_hyperparams = select_hyperparameters(model_type)
 
-        model_type = select_option(
-            "Select model type:",
-            ModelFactory.list_available(),
-            default=model_type,
-        )
+    # Ask if user wants to enable cross-validation
+    enable_cv = confirm_action("Enable cross-validation?", default=True)
 
-        preprocessing = select_option(
-            "Select preprocessing strategy:",
-            PreprocessorFactory.list_available(),
-            default=preprocessing,
-        )
+    console.print()
 
-        # Ask if user wants to configure hyperparameters
-        if confirm_action("Configure hyperparameters?", default=False):
-            custom_hyperparams = select_hyperparameters(model_type)
-
-        # Ask if user wants to enable cross-validation
-        if not enable_cv:
-            enable_cv = confirm_action("Enable cross-validation?", default=True)
-
-        console.print()
+    # Use settings for all other values
+    experiment_name = _settings.mlflow_experiment_name
+    data_path = _settings.data_path
+    output_dir = _settings.model_dir
+    test_size = _settings.default_test_size
+    random_state = _settings.default_random_state
+    cv_splits = _settings.default_cv_splits
 
     # Show configuration
     config = {
@@ -144,7 +82,6 @@ def train(
         "Test Size": f"{test_size:.0%}",
         "Random Seed": str(random_state),
         "Cross-Validation": f"{cv_splits}-fold" if enable_cv else "Disabled",
-        "Register": "Yes" if register else "No",
     }
     if custom_hyperparams:
         config["Custom Params"] = ", ".join(f"{k}={v}" for k, v in custom_hyperparams.items())
@@ -168,9 +105,7 @@ def train(
     settings = get_settings()
     settings.configure_mlflow_s3()
 
-    # Use provided tracking URI or fall back to settings
-    effective_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
-    mlflow.set_tracking_uri(effective_tracking_uri)
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(experiment_name)
 
     with Progress(
@@ -356,11 +291,9 @@ def train(
         console.print(create_feature_importance_table(feature_importance))
         console.print()
 
-    # In interactive mode, ask user if they want to register the model
-    should_register = register
-    if interactive:
-        console.print()
-        should_register = confirm_action("Register this model in MLflow Registry?", default=False)
+    # Ask user if they want to register the model
+    console.print()
+    should_register = confirm_action("Register this model in MLflow Registry?", default=True)
 
     # Register model if requested
     registered_version = None
@@ -402,7 +335,7 @@ def train(
     result_info = f"""[bold]Run ID:[/bold] {run_id[:8]}...
 [bold]Artifact ID:[/bold] {bundle.metadata.artifact_id[:8]}...
 [bold]Bundle saved:[/bold] {bundle_path}
-[bold]MLflow UI:[/bold] {effective_tracking_uri}"""
+[bold]MLflow UI:[/bold] {settings.mlflow_tracking_uri}"""
 
     if registered_version:
         result_info += f"\n[bold]Registered:[/bold] v{registered_version}"

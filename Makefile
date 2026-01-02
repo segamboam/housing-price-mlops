@@ -51,7 +51,7 @@ help: ## Show this help message
 	@echo "  \033[36msetup\033[0m            Install dependencies + create directories"
 	@echo ""
 	@echo "\033[1mTRAINING\033[0m"
-	@echo "  \033[36mtrain\033[0m            Train model (supports --model-type, --cv, --interactive)"
+	@echo "  \033[36mtrain\033[0m            Train model interactively"
 	@echo "  \033[36mexperiment\033[0m       Run experiment grid from YAML config"
 	@echo ""
 	@echo "\033[1mMODEL MANAGEMENT\033[0m"
@@ -92,7 +92,7 @@ setup: install ## Install dependencies + create directories
 #==============================================================================
 # TRAINING
 #==============================================================================
-train: ## Train model (supports --model-type, --cv, --interactive)
+train: ## Train model interactively
 	$(CLI) train
 
 experiment: ## Run experiment grid from YAML config
