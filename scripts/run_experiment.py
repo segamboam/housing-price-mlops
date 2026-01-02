@@ -73,7 +73,7 @@ After running, compare results in MLflow UI:
 
     # Show MLflow info
     settings = get_settings()
-    console.print(f"\n[bold]Results logged to MLflow[/bold]")
+    console.print("\n[bold]Results logged to MLflow[/bold]")
     console.print(f"  MLflow UI: {settings.mlflow_tracking_uri}")
     console.print(f"  Runs: {len(results)}")
 

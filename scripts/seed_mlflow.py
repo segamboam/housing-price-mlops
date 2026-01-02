@@ -14,7 +14,6 @@ Usage:
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 # Add project root to path
@@ -61,7 +60,7 @@ def seed_mlflow() -> None:
     with open(metadata_path) as f:
         metadata = json.load(f)
 
-    print(f"\nSeed model info:")
+    print("\nSeed model info:")
     print(f"  Model type: {metadata.get('model_type', 'unknown')}")
     print(f"  Preprocessing: {metadata.get('preprocessing_strategy', 'unknown')}")
     print(f"  Test R2: {metadata.get('test_metrics', {}).get('r2', 'N/A'):.4f}")
@@ -70,10 +69,9 @@ def seed_mlflow() -> None:
     experiment_name = settings.mlflow_experiment_name
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
-        experiment_id = client.create_experiment(experiment_name)
+        client.create_experiment(experiment_name)
         print(f"\nCreated experiment: {experiment_name}")
     else:
-        experiment_id = experiment.experiment_id
         print(f"\nUsing existing experiment: {experiment_name}")
 
     mlflow.set_experiment(experiment_name)
@@ -171,9 +169,7 @@ def seed_mlflow() -> None:
             client.set_model_version_tag(
                 settings.mlflow_model_name, version_num, "preprocessing", preprocessing
             )
-            client.set_model_version_tag(
-                settings.mlflow_model_name, version_num, "source", "seed"
-            )
+            client.set_model_version_tag(settings.mlflow_model_name, version_num, "source", "seed")
             client.set_model_version_tag(
                 settings.mlflow_model_name, version_num, "test_r2", f"{test_r2:.4f}"
             )
