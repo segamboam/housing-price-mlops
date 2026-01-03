@@ -49,6 +49,18 @@ def seed_mlflow() -> None:
         print("Make sure Docker infrastructure is running: make infra-up")
         sys.exit(1)
 
+    # Check if model already exists with production alias
+    try:
+        model_version = client.get_model_version_by_alias(
+            name=settings.mlflow_model_name, alias="production"
+        )
+        print(f"\nModel already seeded! Production alias points to version {model_version.version}")
+        print("Skipping seed (use --force to re-seed)")
+        sys.exit(0)
+    except mlflow.exceptions.MlflowException:
+        # No production alias exists, proceed with seeding
+        pass
+
     # Check if seed bundle exists
     seed_path = Path("seed/artifact_bundle")
     if not seed_path.exists():

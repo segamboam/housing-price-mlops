@@ -138,8 +138,10 @@ api: ## Start API locally with hot-reload
 #==============================================================================
 up: ## Start full stack (infra + API in containers)
 	$(COMPOSE) up -d postgres minio minio-init mlflow
-	@echo "Waiting for infrastructure..."
-	@sleep 5
+	@echo "Waiting for MLflow to be healthy..."
+	@timeout 120 bash -c 'until docker inspect mlflow-server --format="{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 2; done' || (echo "MLflow failed to start"; exit 1)
+	@echo "Seeding MLflow if needed..."
+	@$(PYTHON) scripts/seed_mlflow.py || true
 	$(COMPOSE) up -d api
 	@echo ""
 	@echo "Stack ready!"
@@ -150,8 +152,10 @@ up: ## Start full stack (infra + API in containers)
 
 dev: ## Start infrastructure only (for local API development)
 	$(COMPOSE) up -d postgres minio minio-init mlflow
-	@echo "Waiting for infrastructure..."
-	@sleep 5
+	@echo "Waiting for MLflow to be healthy..."
+	@timeout 120 bash -c 'until docker inspect mlflow-server --format="{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 2; done' || (echo "MLflow failed to start"; exit 1)
+	@echo "Seeding MLflow if needed..."
+	@$(PYTHON) scripts/seed_mlflow.py || true
 	@echo ""
 	@echo "Infrastructure ready!"
 	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
