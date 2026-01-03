@@ -1,19 +1,10 @@
 """CLI command to train a model."""
 
-from datetime import datetime
-
 import mlflow
-import mlflow.sklearn
 import typer
 from mlflow import MlflowClient
-from mlflow.models import infer_signature
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from sklearn.model_selection import train_test_split
 
-# Import strategies to register them with factories
-import src.data.preprocessing.strategies  # noqa: F401
-import src.models.strategies  # noqa: F401
-from src.artifacts.bundle import MLArtifactBundle
 from src.cli.utils import (
     config_panel,
     confirm_action,
@@ -27,12 +18,10 @@ from src.cli.utils import (
     success_panel,
 )
 from src.config.settings import get_settings
-from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, get_data_summary, load_housing_data
 from src.data.preprocessing.factory import PreprocessorFactory
-from src.models.cross_validation import CVResult, perform_cross_validation
-from src.models.evaluate import evaluate_model, generate_evaluation_report, save_report
+from src.models.evaluate import generate_evaluation_report, save_report
 from src.models.factory import ModelFactory
-from src.utils import compute_dataset_hash
+from src.training.core import train_model
 
 # Get settings for defaults
 _settings = get_settings()
@@ -66,7 +55,6 @@ def train() -> None:
     console.print()
 
     # Use settings for all other values
-    experiment_name = _settings.mlflow_experiment_name
     data_path = _settings.data_path
     output_dir = _settings.model_dir
     test_size = _settings.default_test_size
@@ -77,7 +65,7 @@ def train() -> None:
     config = {
         "Model": model_type,
         "Preprocessing": preprocessing,
-        "Experiment": experiment_name,
+        "Experiment": _settings.mlflow_experiment_name,
         "Data": str(data_path),
         "Test Size": f"{test_size:.0%}",
         "Random Seed": str(random_state),
@@ -101,194 +89,55 @@ def train() -> None:
         console.print(error_panel(f"Data file not found: {data_path}"))
         raise typer.Exit(1)
 
-    # Configure MLflow with S3/MinIO credentials
-    settings = get_settings()
-    settings.configure_mlflow_s3()
-
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(experiment_name)
-
+    # Train with progress indicator
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        # Load data
-        task = progress.add_task("Loading data...", total=None)
-        df = load_housing_data(str(data_path))
-        summary = get_data_summary(df)
-        dataset_hash = compute_dataset_hash(df)
-        progress.update(task, description=f"[green]Loaded {summary['n_rows']} rows")
+        task = progress.add_task("Training model...", total=None)
 
-        # Prepare features
-        X = df[FEATURE_COLUMNS]
-        y = df[TARGET_COLUMN]
-
-        # Calculate feature stats for monitoring
-        feature_stats = {
-            col: {"min": float(X[col].min()), "max": float(X[col].max())} for col in FEATURE_COLUMNS
-        }
-
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
+        # Use shared training logic
+        result = train_model(
+            model_type=model_type,
+            preprocessing=preprocessing,
+            data_path=str(data_path),
+            test_size=test_size,
+            random_state=random_state,
+            hyperparameters=custom_hyperparams,
+            enable_cv=enable_cv,
+            cv_splits=cv_splits,
+            source_tag="cli",
         )
 
-        # Preprocess
-        progress.update(task, description="Preprocessing...")
-        preprocessor = PreprocessorFactory.create(preprocessing)
-        preprocessor.fit(X_train)
-        X_train_transformed = preprocessor.transform(X_train)
-        X_test_transformed = preprocessor.transform(X_test)
-        progress.update(task, description=f"[green]Preprocessed with {preprocessing}")
+        progress.update(task, description="[green]Training complete")
 
-        # Train - use descriptive run name with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"{model_type}_{preprocessing}_{timestamp}"
+        # Save artifacts locally
+        progress.update(task, description="Saving local artifacts...")
+        bundle_path = output_dir / "artifact_bundle"
+        result.bundle.save(bundle_path)
 
-        with mlflow.start_run(run_name=run_name) as run:
-            progress.update(task, description=f"Training {model_type}...")
-
-            # Set run tags for filtering and organization (MLflow 3.x)
-            mlflow.set_tags(
-                {
-                    "model_type": model_type,
-                    "preprocessing": preprocessing,
-                    "source": "cli",
-                    "environment": "development",
-                }
-            )
-
-            # Log parameters
-            mlflow.log_params(
-                {
-                    "model_type": model_type,
-                    "preprocessing_strategy": preprocessing,
-                    "test_size": test_size,
-                    "random_state": random_state,
-                    "n_samples": summary["n_rows"],
-                    "dataset_hash": dataset_hash,
-                }
-            )
-
-            # Create and train model
-            model = ModelFactory.create(model_type)
-            train_params = {"random_state": random_state, **custom_hyperparams}
-            model.train(X_train_transformed, y_train.values, **train_params)
-
-            # Log model params
-            mlflow.log_params({f"model_{k}": v for k, v in model.params.items()})
-
-            progress.update(task, description="[green]Training complete")
-
-            # Evaluate
-            progress.update(task, description="Evaluating...")
-            train_result = evaluate_model(model.model, X_train_transformed, y_train.values)
-            test_result = evaluate_model(model.model, X_test_transformed, y_test.values)
-
-            # Log metrics (now includes mape and accuracy_within_10pct)
-            mlflow.log_metrics(
-                {
-                    "train_rmse": train_result["metrics"]["rmse"],
-                    "train_mae": train_result["metrics"]["mae"],
-                    "train_r2": train_result["metrics"]["r2"],
-                    "train_mape": train_result["metrics"]["mape"],
-                    "train_accuracy_within_10pct": train_result["metrics"]["accuracy_within_10pct"],
-                    "test_rmse": test_result["metrics"]["rmse"],
-                    "test_mae": test_result["metrics"]["mae"],
-                    "test_r2": test_result["metrics"]["r2"],
-                    "test_mape": test_result["metrics"]["mape"],
-                    "test_accuracy_within_10pct": test_result["metrics"]["accuracy_within_10pct"],
-                }
-            )
-
-            progress.update(task, description="[green]Evaluation complete")
-
-            # Cross-validation (optional)
-            cv_result: CVResult | None = None
-            if enable_cv:
-                progress.update(task, description=f"Running {cv_splits}-fold cross-validation...")
-                cv_result = perform_cross_validation(
-                    model.model,
-                    X_train_transformed,
-                    y_train.values,
-                    n_splits=cv_splits,
-                    random_state=random_state,
-                )
-                # Log CV metrics to MLflow
-                mlflow.log_metrics(cv_result.to_dict())
-                progress.update(
-                    task,
-                    description=f"[green]CV complete: RMSE {cv_result.cv_rmse_mean:.4f} ± {cv_result.cv_rmse_std:.4f}",
-                )
-
-            # Get feature importance
-            feature_importance = model.get_feature_importance(FEATURE_COLUMNS) or {}
-
-            # Save artifacts
-            progress.update(task, description="Saving artifacts...")
-
-            bundle = MLArtifactBundle.create(
-                model=model,
-                preprocessor=preprocessor,
-                feature_names=FEATURE_COLUMNS,
-                training_samples=len(y_train),
-                test_samples=len(y_test),
-                train_metrics=train_result["metrics"],
-                test_metrics=test_result["metrics"],
-                cv_metrics=cv_result.to_dict() if cv_result else {},
-                feature_importance=feature_importance,
-                feature_stats=feature_stats,
-                mlflow_run_id=run.info.run_id,
-                mlflow_experiment_name=experiment_name,
-                random_state=random_state,
-            )
-
-            bundle_path = output_dir / "artifact_bundle"
-            bundle.save(bundle_path)
-
-            # Save evaluation report
-            report = generate_evaluation_report(
-                train_metrics=train_result["metrics"],
-                test_metrics=test_result["metrics"],
-                feature_importance=feature_importance,
-                model_params=model.params,
-            )
-            save_report(report, output_dir / "evaluation_report.json")
-
-            # Log to MLflow
-            mlflow.log_artifacts(str(bundle_path), artifact_path="artifact_bundle")
-
-            # Log model with signature
-            signature = infer_signature(
-                X_train_transformed,
-                model.model.predict(X_train_transformed[:1]),
-            )
-
-            # Log model with descriptive artifact_path for LoggedModel name in MLflow 3.x
-            model_artifact_path = f"sklearn_{model_type}"
-            mlflow.sklearn.log_model(
-                model.model,
-                artifact_path=model_artifact_path,
-                signature=signature,
-            )
-
-            progress.update(task, description="[green]Artifacts saved")
-
-            # Store run info for later use
-            run_id = run.info.run_id
+        # Save evaluation report
+        report = generate_evaluation_report(
+            train_metrics=result.train_metrics,
+            test_metrics=result.test_metrics,
+            feature_importance=result.feature_importance,
+            model_params=result.model.params,
+        )
+        save_report(report, output_dir / "evaluation_report.json")
+        progress.update(task, description="[green]Artifacts saved")
 
     # Show results
     console.print()
-    console.print(create_metrics_table(train_result["metrics"], test_result["metrics"]))
+    console.print(create_metrics_table(result.train_metrics, result.test_metrics))
     console.print()
 
-    if cv_result:
-        console.print(create_cv_results_table(cv_result.to_dict()))
+    if result.cv_result:
+        console.print(create_cv_results_table(result.cv_result.to_dict()))
         console.print()
 
-    if feature_importance:
-        console.print(create_feature_importance_table(feature_importance))
+    if result.feature_importance:
+        console.print(create_feature_importance_table(result.feature_importance))
         console.print()
 
     # Ask user if they want to register the model
@@ -296,21 +145,22 @@ def train() -> None:
     should_register = confirm_action("Register this model in MLflow Registry?", default=True)
 
     # Register model if requested
+    settings = get_settings()
     registered_version = None
     if should_register:
-        model_uri = f"runs:/{run_id}/sklearn_{model_type}"
+        model_uri = f"runs:/{result.run_id}/sklearn_{model_type}"
         model_name = settings.mlflow_model_name
 
-        # Register the model (no alias - use 'make promote' to assign production)
-        result = mlflow.register_model(model_uri, model_name)
-        registered_version = result.version
+        # Register the model
+        reg_result = mlflow.register_model(model_uri, model_name)
+        registered_version = reg_result.version
 
-        # Add description and tags to the model version (MLflow 3.x)
+        # Add description and tags to the model version
         client = MlflowClient()
         version_description = (
             f"{model_type} with {preprocessing} preprocessing. "
-            f"Test R²: {test_result['metrics']['r2']:.4f}, "
-            f"RMSE: {test_result['metrics']['rmse']:.4f}"
+            f"Test R²: {result.test_metrics['r2']:.4f}, "
+            f"RMSE: {result.test_metrics['rmse']:.4f}"
         )
         client.update_model_version(
             name=model_name,
@@ -318,22 +168,21 @@ def train() -> None:
             description=version_description,
         )
 
-        # Add tags to model version for filtering
+        # Add tags to model version
         client.set_model_version_tag(model_name, registered_version, "model_type", model_type)
         client.set_model_version_tag(model_name, registered_version, "preprocessing", preprocessing)
         client.set_model_version_tag(
-            model_name, registered_version, "test_r2", f"{test_result['metrics']['r2']:.4f}"
+            model_name, registered_version, "test_r2", f"{result.test_metrics['r2']:.4f}"
         )
 
         console.print(
             f"[green]Model registered as {model_name} v{registered_version}[/green]\n"
-            f"[dim]Use 'make promote VERSION={registered_version}' "
-            f"to promote[/dim]"
+            f"[dim]Use 'make promote VERSION={registered_version}' to promote[/dim]"
         )
 
     # Success message
-    result_info = f"""[bold]Run ID:[/bold] {run_id[:8]}...
-[bold]Artifact ID:[/bold] {bundle.metadata.artifact_id[:8]}...
+    result_info = f"""[bold]Run ID:[/bold] {result.run_id[:8]}...
+[bold]Artifact ID:[/bold] {result.bundle.metadata.artifact_id[:8]}...
 [bold]Bundle saved:[/bold] {bundle_path}
 [bold]MLflow UI:[/bold] {settings.mlflow_tracking_uri}"""
 

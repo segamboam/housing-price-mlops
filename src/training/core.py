@@ -1,0 +1,222 @@
+"""Core training logic shared by CLI and experiment runner."""
+
+import tempfile
+from dataclasses import dataclass
+from datetime import datetime
+
+import mlflow
+import mlflow.sklearn
+from mlflow.models import infer_signature
+from sklearn.model_selection import train_test_split
+
+# Import strategies to register them with factories
+import src.data.preprocessing.strategies  # noqa: F401
+import src.models.strategies  # noqa: F401
+from src.artifacts.bundle import MLArtifactBundle
+from src.config.settings import get_settings
+from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
+from src.data.preprocessing.base import BasePreprocessor
+from src.data.preprocessing.factory import PreprocessorFactory
+from src.models.base import BaseModel
+from src.models.cross_validation import CVResult, perform_cross_validation
+from src.models.evaluate import evaluate_model
+from src.models.factory import ModelFactory
+from src.utils import compute_dataset_hash
+
+
+@dataclass
+class TrainingResult:
+    """Result from training a model."""
+
+    run_id: str
+    model: BaseModel
+    preprocessor: BasePreprocessor
+    bundle: MLArtifactBundle
+    train_metrics: dict[str, float]
+    test_metrics: dict[str, float]
+    cv_result: CVResult | None
+    feature_importance: dict[str, float]
+    training_samples: int
+    test_samples: int
+
+
+def train_model(
+    model_type: str,
+    preprocessing: str,
+    data_path: str = "data/HousingData.csv",
+    test_size: float = 0.2,
+    random_state: int = 42,
+    hyperparameters: dict | None = None,
+    enable_cv: bool = True,
+    cv_splits: int = 5,
+    run_name: str | None = None,
+    source_tag: str = "training",
+) -> TrainingResult:
+    """Train a model with the given configuration.
+
+    This is the core training function used by both the CLI and experiment runner.
+    It handles data loading, preprocessing, training, evaluation, and MLflow logging.
+
+    Args:
+        model_type: Type of model to train (e.g., 'gradient_boost', 'random_forest').
+        preprocessing: Preprocessing strategy (e.g., 'v2_knn', 'v3_iterative').
+        data_path: Path to the training data CSV.
+        test_size: Fraction of data to use for testing.
+        random_state: Random seed for reproducibility.
+        hyperparameters: Optional model hyperparameters.
+        enable_cv: Whether to perform cross-validation.
+        cv_splits: Number of CV folds.
+        run_name: Optional custom run name for MLflow.
+        source_tag: Tag to identify the source (e.g., 'cli', 'experiment_runner').
+
+    Returns:
+        TrainingResult with all training artifacts and metrics.
+    """
+    hyperparameters = hyperparameters or {}
+
+    # Configure MLflow
+    settings = get_settings()
+    settings.configure_mlflow_s3()
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment(settings.mlflow_experiment_name)
+
+    # Load data
+    df = load_housing_data(data_path)
+    dataset_hash = compute_dataset_hash(df)
+
+    X = df[FEATURE_COLUMNS]
+    y = df[TARGET_COLUMN]
+
+    # Calculate feature stats for monitoring
+    feature_stats = {
+        col: {"min": float(X[col].min()), "max": float(X[col].max())}
+        for col in FEATURE_COLUMNS
+    }
+
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    # Preprocess
+    preprocessor = PreprocessorFactory.create(preprocessing)
+    preprocessor.fit(X_train)
+    X_train_transformed = preprocessor.transform(X_train)
+    X_test_transformed = preprocessor.transform(X_test)
+
+    # Build run name
+    if run_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{model_type}_{preprocessing}_{timestamp}"
+
+    # Train with MLflow tracking
+    with mlflow.start_run(run_name=run_name) as run:
+        # Set run tags
+        mlflow.set_tags(
+            {
+                "model_type": model_type,
+                "preprocessing": preprocessing,
+                "source": source_tag,
+                "environment": "development",
+            }
+        )
+
+        # Log parameters
+        mlflow.log_params(
+            {
+                "model_type": model_type,
+                "preprocessing_strategy": preprocessing,
+                "test_size": test_size,
+                "random_state": random_state,
+                "n_samples": len(df),
+                "dataset_hash": dataset_hash,
+                "enable_cv": enable_cv,
+            }
+        )
+
+        # Log hyperparameters
+        if hyperparameters:
+            mlflow.log_params({f"hp_{k}": v for k, v in hyperparameters.items()})
+
+        # Create and train model
+        model = ModelFactory.create(model_type)
+        train_params = {"random_state": random_state, **hyperparameters}
+        model.train(X_train_transformed, y_train.values, **train_params)
+
+        # Log model params
+        mlflow.log_params({f"model_{k}": v for k, v in model.params.items()})
+
+        # Evaluate
+        train_result = evaluate_model(model.model, X_train_transformed, y_train.values)
+        test_result = evaluate_model(model.model, X_test_transformed, y_test.values)
+
+        # Log metrics
+        for prefix, metrics in [
+            ("train", train_result["metrics"]),
+            ("test", test_result["metrics"]),
+        ]:
+            for name, value in metrics.items():
+                mlflow.log_metric(f"{prefix}_{name}", value)
+
+        # Cross-validation
+        cv_result: CVResult | None = None
+        if enable_cv:
+            cv_result = perform_cross_validation(
+                model.model,
+                X_train_transformed,
+                y_train.values,
+                n_splits=cv_splits,
+                random_state=random_state,
+            )
+            mlflow.log_metrics(cv_result.to_dict())
+
+        # Get feature importance
+        feature_importance = model.get_feature_importance(FEATURE_COLUMNS) or {}
+
+        # Create artifact bundle
+        bundle = MLArtifactBundle.create(
+            model=model,
+            preprocessor=preprocessor,
+            feature_names=FEATURE_COLUMNS,
+            training_samples=len(y_train),
+            test_samples=len(y_test),
+            train_metrics=train_result["metrics"],
+            test_metrics=test_result["metrics"],
+            cv_metrics=cv_result.to_dict() if cv_result else {},
+            feature_importance=feature_importance,
+            feature_stats=feature_stats,
+            mlflow_run_id=run.info.run_id,
+            mlflow_experiment_name=settings.mlflow_experiment_name,
+            random_state=random_state,
+        )
+
+        # Save bundle to temp directory and log to MLflow
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = bundle.save(f"{tmp_dir}/artifact_bundle")
+            mlflow.log_artifacts(str(bundle_path), artifact_path="artifact_bundle")
+
+        # Log model with signature
+        signature = infer_signature(
+            X_train_transformed,
+            model.model.predict(X_train_transformed[:1]),
+        )
+
+        model_artifact_path = f"sklearn_{model_type}"
+        mlflow.sklearn.log_model(
+            model.model,
+            artifact_path=model_artifact_path,
+            signature=signature,
+        )
+
+        return TrainingResult(
+            run_id=run.info.run_id,
+            model=model,
+            preprocessor=preprocessor,
+            bundle=bundle,
+            train_metrics=train_result["metrics"],
+            test_metrics=test_result["metrics"],
+            cv_result=cv_result,
+            feature_importance=feature_importance,
+            training_samples=len(y_train),
+            test_samples=len(y_test),
+        )

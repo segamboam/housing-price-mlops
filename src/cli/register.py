@@ -101,14 +101,8 @@ def register(
             )
             raise typer.Exit(1)
 
-        # Find model artifact path
+        # Build model artifact path (MLflow 3.x convention)
         model_artifact_path = f"sklearn_{model_type}"
-        if model_artifact_path not in artifact_names:
-            # Fallback to generic
-            model_artifact_path = "model"
-            if model_artifact_path not in artifact_names:
-                console.print(error_panel(f"No model artifact found in run {full_run_id[:8]}"))
-                raise typer.Exit(1)
 
         # Register the model
         effective_model_name = model_name or settings.mlflow_model_name
