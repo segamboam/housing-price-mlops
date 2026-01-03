@@ -1,42 +1,52 @@
 # Housing Price Prediction API
 
-Sistema MLOps para predicción de precios de viviendas mediante API REST, implementado con tecnologías open-source y diseñado para ser portable e independiente de proveedores cloud.
-
-## Tabla de Contenidos
-
-- [Descripción](#descripción)
-- [Arquitectura](#arquitectura)
-- [Requisitos](#requisitos)
-- [Instalación](#instalación)
-- [Uso](#uso)
-  - [Entrenamiento](#entrenamiento)
-  - [API REST](#api-rest)
-  - [CLI](#cli)
-  - [Docker](#docker)
-- [Endpoints de la API](#endpoints-de-la-api)
-- [Monitoreo](#monitoreo)
-- [CI/CD](#cicd)
-- [Machine Learning](#machine-learning)
-  - [Experimentación y Evaluación](#experimentación-y-evaluación)
-  - [Entrenamiento Interactivo](#entrenamiento-interactivo)
-  - [Promoción de Modelos](#promoción-de-modelos)
-- [Decisiones Técnicas](#decisiones-técnicas)
-- [Nota sobre Archivos Incluidos](#nota-sobre-archivos-incluidos)
-- [Posibles Mejoras](#posibles-mejoras)
-- [Uso de Herramientas AI](#uso-de-herramientas-ai)
+Sistema MLOps para predicción de precios de viviendas mediante API REST. Stack 100% open-source, portable e independiente de proveedores cloud.
 
 ---
 
-## Descripción
+## Quick Start
 
-API RESTful para predicción de precios de viviendas basada en el dataset Boston Housing. El sistema incluye:
+```bash
+# 1. Clonar e instalar
+git clone <repo-url> && cd meli_challenge
+make setup                    # o: pip install uv && uv sync
 
-- Pipeline de entrenamiento reproducible con múltiples modelos y estrategias de preprocesamiento
-- API REST con FastAPI para inferencia en tiempo real
-- Tracking de experimentos con MLflow
-- Monitoreo con Prometheus
-- CLI para gestión de modelos
-- Containerización con Docker
+# 2. Configurar entorno
+cp .env.example .env
+
+# 3. Levantar servicios (PostgreSQL + MinIO + MLflow)
+make dev                      # o: docker compose up -d postgres minio minio-init mlflow
+
+# 4. Iniciar API
+make api                      # o: uv run uvicorn src.api.main:app --reload --port 8000
+
+# 5. Probar predicción
+make predict                  # o: curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d '{"CRIM":0.00632,"ZN":18.0,"INDUS":2.31,"CHAS":0,"NOX":0.538,"RM":6.575,"AGE":65.2,"DIS":4.09,"RAD":1,"TAX":296.0,"PTRATIO":15.3,"B":396.9,"LSTAT":4.98}'
+```
+
+**URLs disponibles:**
+- API: http://localhost:8000
+- API Docs (Swagger): http://localhost:8000/docs
+- MLflow UI: http://localhost:5000
+- MinIO Console: http://localhost:9001
+
+---
+
+## Tabla de Contenidos
+
+- [Quick Start](#quick-start)
+- [Arquitectura](#arquitectura)
+- [Flujo MLOps Completo](#flujo-mlops-completo)
+- [Comandos](#comandos)
+- [Entrenamiento](#entrenamiento)
+- [Reentrenamiento en Producción](#reentrenamiento-en-producción)
+- [API REST](#api-rest)
+- [Docker](#docker)
+- [Monitoreo](#monitoreo)
+- [CI/CD](#cicd)
+- [Decisiones Técnicas](#decisiones-técnicas)
+- [Estado Actual y Mejoras](#estado-actual-y-mejoras)
+- [Uso de Herramientas AI](#uso-de-herramientas-ai)
 
 ---
 
@@ -75,8 +85,8 @@ API RESTful para predicción de precios de viviendas basada en el dataset Boston
 │                    │  │  │ /predict │  │ /health  │  │/metrics│ │     │    │
 │                    │  │  └──────────┘  └──────────┘  └────────┘ │     │    │
 │                    │  │  ┌──────────────┐  ┌─────────────────┐  │     │    │
-│                    │  │  │ /model/info  │  │   Prometheus    │  │     │    │
-│                    │  │  └──────────────┘  │   Middleware    │  │     │    │
+│                    │  │  │ /model/info  │  │ /model/reload   │  │     │    │
+│                    │  │  └──────────────┘  └─────────────────┘  │     │    │
 │                    │  └─────────────────────────────────────────┘     │    │
 │                    │                                                  │    │
 └────────────────────┴──────────────────────────────────────────────────┴────┘
@@ -88,197 +98,339 @@ API RESTful para predicción de precios de viviendas basada en el dataset Boston
 meli_challenge/
 ├── src/
 │   ├── api/                    # API REST (FastAPI)
-│   │   ├── main.py             # App principal y endpoints
-│   │   ├── schemas.py          # Modelos Pydantic
+│   │   ├── main.py             # Endpoints: /predict, /model/reload, etc.
+│   │   ├── schemas.py          # Validación Pydantic
 │   │   ├── middleware.py       # Métricas Prometheus
 │   │   └── security.py         # Autenticación API Key
 │   │
 │   ├── cli/                    # Interfaz de línea de comandos
 │   │   ├── main.py             # App Typer
-│   │   ├── train.py            # Comando de entrenamiento
-│   │   ├── info.py             # Info del modelo
-│   │   ├── runs.py             # Listar experimentos
-│   │   └── promote.py          # Promover modelos
+│   │   ├── train.py            # Entrenamiento
+│   │   ├── register.py         # Registro en MLflow
+│   │   ├── promote.py          # Promoción de modelos
+│   │   └── runs.py             # Listar experimentos
 │   │
 │   ├── models/                 # Modelos ML (Strategy Pattern)
 │   │   ├── base.py             # Clase base abstracta
 │   │   ├── factory.py          # Factory con registro
-│   │   ├── evaluate.py         # Métricas de evaluación (RMSE, MAE, R², MAPE)
-│   │   ├── cross_validation.py # K-Fold CV y learning curves
-│   │   └── strategies/         # Implementaciones
-│   │       ├── random_forest.py
-│   │       ├── gradient_boost.py
-│   │       ├── xgboost_model.py
-│   │       └── linear.py
-│   │
-│   ├── experiments/            # Sistema de experimentación
-│   │   ├── runner.py           # Ejecutor de grid search desde YAML
-│   │   ├── train_experiment.py # Entrenamiento individual
-│   │   └── config.yaml         # Configuración YAML de ejemplo
+│   │   ├── evaluate.py         # Métricas (RMSE, MAE, R², MAPE)
+│   │   ├── cross_validation.py # K-Fold CV
+│   │   └── strategies/         # RandomForest, GradientBoost, XGBoost, Linear
 │   │
 │   ├── data/                   # Carga y preprocesamiento
-│   │   ├── loader.py           # Carga, validación y columnas
-│   │   └── preprocessing/      # Estrategias de preprocesamiento
-│   │       ├── base.py
-│   │       ├── factory.py
-│   │       └── strategies/
-│   │           ├── v1_median.py    # SimpleImputer + StandardScaler
-│   │           ├── v2_knn.py       # KNNImputer + StandardScaler
-│   │           └── v3_iterative.py # IterativeImputer + StandardScaler
+│   │   ├── loader.py           # Carga y validación
+│   │   └── preprocessing/      # Estrategias: v1_median, v2_knn, v3_iterative
+│   │
+│   ├── experiments/            # Sistema de experimentación
+│   │   ├── runner.py           # Grid search desde YAML
+│   │   └── config.yaml         # Configuración de experimentos
 │   │
 │   ├── artifacts/              # Empaquetado de artefactos
-│   │   ├── bundle.py           # MLArtifactBundle
+│   │   ├── bundle.py           # MLArtifactBundle (modelo + preprocesador)
 │   │   └── metadata.py         # Metadatos del modelo
 │   │
-│   ├── config/                 # Configuración centralizada
-│   │   └── settings.py         # Settings (API, ML, MLflow)
-│   │
-│   └── utils/                  # Utilidades compartidas
-│       └── hashing.py          # Hash de datasets
+│   └── config/settings.py      # Configuración centralizada
 │
-├── data/                       # Dataset
-│   └── HousingData.csv
-│
-├── models/                     # Modelos entrenados
-│   ├── artifact_bundle/        # Bundle principal
-│   └── plots/                  # Visualizaciones
-│
+├── data/HousingData.csv        # Dataset
+├── models/                     # Modelos entrenados (bundle)
 ├── scripts/                    # Scripts utilitarios
-│   ├── run_experiment.py       # CLI para experimentos
-│   └── seed_mlflow.py          # Seed de MLflow
-│
-├── Dockerfile                  # Imagen Docker
+├── tests/                      # Tests (pytest)
+├── Dockerfile                  # Imagen de la API
+├── Dockerfile.mlflow           # Imagen de MLflow
 ├── docker-compose.yml          # Orquestación de servicios
 ├── Makefile                    # Comandos unificados
-├── pyproject.toml              # Dependencias y configuración
-└── .github/workflows/ci.yml    # Pipeline CI/CD
+└── pyproject.toml              # Dependencias (uv/pip)
 ```
 
 ---
 
-## Requisitos
+## Flujo MLOps Completo
 
-- Python 3.12+
-- Docker y Docker Compose (opcional)
-- Git
+El sistema implementa un ciclo completo de MLOps:
 
----
-
-## Instalación
-
-### Opción 1: Instalación Local
-
-```bash
-# Clonar repositorio
-git clone <repo-url>
-cd meli_challenge
-
-# Instalar dependencias con uv (recomendado)
-make install
-
-# O manualmente
-pip install uv
-uv sync
+```
+┌─────────┐    ┌──────────┐    ┌─────────┐    ┌──────────┐    ┌─────────┐
+│  TRAIN  │───▶│ REGISTER │───▶│ PROMOTE │───▶│  RELOAD  │───▶│  SERVE  │
+│  Model  │    │ (MLflow) │    │ (alias) │    │   API    │    │   New   │
+└─────────┘    └──────────┘    └─────────┘    └──────────┘    └─────────┘
+     │              │               │              │              │
+     ▼              ▼               ▼              ▼              ▼
+ Entrena y     Versiona el     Asigna alias   Recarga sin    Predicciones
+ evalúa con    modelo en el    "production"   reiniciar      con modelo
+ CV opcional   Model Registry  al modelo      la API         actualizado
 ```
 
-### Opción 2: Docker
+### Demostración Práctica (Ciclo Completo)
+
+#### Paso 1: Setup inicial con modelo pre-cargado
 
 ```bash
-# Construir imagen
-make docker-build
+# Levantar infraestructura
+make dev
 
-# O directamente
-docker-compose build
-```
+# Cargar modelo seed (funciona out-of-the-box)
+make seed
+# → Registra modelo pre-entrenado como v1 con alias "production"
 
-### Variables de Entorno
-
-Copiar el archivo de ejemplo y configurar:
-
-```bash
-cp .env.example .env
-```
-
-Variables disponibles:
-
-| Variable | Descripción | Default |
-|----------|-------------|---------|
-| `API_KEY` | Clave para autenticación (opcional) | - |
-| `MODEL_DIR` | Directorio de modelos | `models` |
-| `MLFLOW_TRACKING_URI` | URI del servidor MLflow | `http://localhost:5000` |
-| `METRICS_ENABLED` | Habilitar métricas Prometheus | `true` |
-
----
-
-## Uso
-
-### Entrenamiento
-
-#### Entrenamiento básico
-
-```bash
-# Con make (usa defaults de settings.py)
-make train
-
-# O directamente con CLI
-uv run meli train
-
-# Modo interactivo (seleccionar modelo, preprocessing, hyperparams)
-make train-i
-```
-
-#### Opciones de entrenamiento
-
-```bash
-# Seleccionar modelo específico
-make train-rf    # Random Forest
-make train-gb    # Gradient Boosting
-make train-xgb   # XGBoost
-make train-linear # Linear Regression
-
-# Personalizar parámetros vía CLI
-uv run meli train \
-    --model-type random_forest \
-    --preprocessing v2_knn \
-    --cv --cv-splits 5
-```
-
-#### Ejecutar experimentos completos
-
-```bash
-# Todos los modelos
-make experiment
-
-# Todas las estrategias de preprocesamiento
-make experiment-preproc
-
-# Grid completo (4 modelos × 3 preprocesadores)
-make experiment-all
-```
-
-### API REST
-
-#### Iniciar servidor de desarrollo
-
-```bash
-# Con make
+# Iniciar API
 make api
 
-# O directamente
-uv run uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+# Verificar predicción
+make predict
+# { "prediction": 30.25, "model_version": "v1", ... }
 ```
 
-#### Iniciar servidor de producción
+#### Paso 2: Reentrenamiento con flujo interactivo
 
 ```bash
-make api-prod
+# Entrenar nuevo modelo
+make train
+# → Seleccionar: random_forest, v2_knn, CV=5
+# → "¿Registrar en MLflow?" → Sí
+# Salida: ✓ Registered as housing-price-model v2
+
+# Promover a producción
+make promote VERSION=2
+
+# Recargar API sin downtime
+curl -X POST http://localhost:8000/model/reload -H "X-API-Key: dev-api-key"
+
+# Verificar nuevo modelo
+make predict
+# { "prediction": 29.80, "model_version": "v2", ... }
 ```
 
-#### Ejemplo de predicción
+#### Paso 3: Experimentación con grid search
 
+```bash
+# Ejecutar grid search (múltiples combinaciones)
+make experiment
+# → Entrena: gradient_boost + random_forest × v1_median + v2_knn
+# → Muestra tabla comparativa
+# → Best Model: gradient_boost_v2_knn (Run ID: abc123...)
+
+# Registrar el mejor modelo
+make register RUN_ID=abc123
+
+# Promover a producción
+make promote VERSION=3
+
+# Recargar API
+curl -X POST http://localhost:8000/model/reload -H "X-API-Key: dev-api-key"
+
+# Verificar
+make predict
+# { "prediction": 30.10, "model_version": "v3", ... }
+```
+
+---
+
+## Comandos
+
+### Referencia Rápida: Make vs Sin Make
+
+| Acción | Con Make | Sin Make |
+|--------|----------|----------|
+| **Setup** | | |
+| Instalar dependencias | `make install` | `uv sync` |
+| Setup completo | `make setup` | `uv sync && mkdir -p models data` |
+| **Entrenamiento** | | |
+| Entrenar (interactivo) | `make train` | `uv run python -m src.cli.main train` |
+| Grid search (automatizado) | `make experiment` | `uv run python scripts/run_experiment.py --config src/experiments/config.yaml` |
+| **Gestión de Modelos** | | |
+| Listar experimentos | `make runs` | `uv run python -m src.cli.main runs` |
+| Registrar modelo | `make register RUN_ID=xxx` | `uv run python -m src.cli.main register <run_id>` |
+| Listar versiones | `make models` | `uv run python -m src.cli.main promote --list` |
+| Promover versión | `make promote VERSION=2` | `uv run python -m src.cli.main promote --version 2` |
+| **API** | | |
+| Iniciar API (dev) | `make api` | `uv run uvicorn src.api.main:app --reload --port 8000` |
+| Predicción de prueba | `make predict` | `curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -H "X-API-Key: dev-api-key" -d '{"CRIM":0.00632,...}'` |
+| **Docker** | | |
+| Levantar todo | `make up` | `docker compose up -d` |
+| Solo infraestructura | `make dev` | `docker compose up -d postgres minio minio-init mlflow` |
+| Detener servicios | `make down` | `docker compose down` |
+| Ver logs | `make logs` | `docker compose logs -f` |
+| Limpiar volúmenes | `make clean` | `docker compose down -v` |
+| **Testing** | | |
+| Ejecutar tests | `make test` | `uv run pytest tests/ -v` |
+| Linting | `make lint` | `uv run ruff check src/ tests/` |
+| CI completo | `make ci` | `make lint && make test && docker build -t housing-api .` |
+| **Demo** | | |
+| Seed MLflow | `make seed` | `uv run python scripts/seed_mlflow.py` |
+
+### Ver Todos los Comandos
+
+```bash
+make help
+```
+
+---
+
+## Entrenamiento
+
+### Modo Interactivo (Por Defecto)
+
+El comando `make train` inicia un asistente interactivo que guía la selección de:
+
+1. **Tipo de modelo** - Random Forest, Gradient Boosting, XGBoost, Linear Regression
+2. **Estrategia de preprocesamiento** - v1_median, v2_knn, v3_iterative
+3. **Cross-validation** - Opcional, con número de splits configurable
+4. **Registro en MLflow** - Opcional
+
+```bash
+# Entrenamiento interactivo (recomendado)
+make train
+# o: uv run python -m src.cli.main train
+```
+
+### Flujo Interactivo
+
+El asistente guía paso a paso:
+
+```
+1. Seleccionar modelo → random_forest, gradient_boost, xgboost, linear
+2. Seleccionar preprocesamiento → v1_median, v2_knn, v3_iterative
+3. ¿Configurar hiperparámetros? → Personalizar n_estimators, max_depth, etc.
+4. ¿Habilitar cross-validation? → 5-fold CV por defecto
+5. Entrenamiento y evaluación
+6. ¿Registrar en MLflow? → Versionar el modelo
+```
+
+Para **automatización/scripts**, usar el sistema de experimentos con YAML (ver siguiente sección).
+
+### Experimentación (Grid Search)
+
+Para probar múltiples combinaciones automáticamente:
+
+```bash
+# Ejecutar grid search desde YAML
+make experiment
+# → Entrena todas las combinaciones
+# → Muestra tabla comparativa
+# → Indica el mejor modelo con su Run ID
+
+# Registrar el mejor modelo manualmente
+make register RUN_ID=<run_id_del_mejor>
+
+# Promover a producción
+make promote VERSION=<version>
+```
+
+Configuración en `src/experiments/config.yaml`:
+
+```yaml
+experiment:
+  name: "housing-tuning"
+  description: "Grid search de modelos"
+
+grid:
+  models:
+    - random_forest
+    - gradient_boost
+  preprocessors:
+    - v1_median
+    - v2_knn
+
+settings:
+  enable_cv: true
+  cv_splits: 5
+```
+
+> **Nota:** A diferencia de `make train`, el grid search no registra modelos automáticamente. Esto permite comparar todos los resultados en MLflow UI antes de decidir cuál registrar.
+
+### Métricas de Evaluación
+
+| Métrica | Descripción |
+|---------|-------------|
+| **RMSE** | Root Mean Squared Error (métrica principal) |
+| **MAE** | Mean Absolute Error |
+| **R²** | Coeficiente de determinación |
+| **MAPE** | Mean Absolute Percentage Error |
+
+---
+
+## Reentrenamiento en Producción
+
+El sistema permite reentrenar y actualizar modelos **sin downtime**.
+
+### Flujo de Reentrenamiento
+
+```bash
+# 1. Entrenar nuevo modelo (interactivo)
+make train
+# → Seleccionar: random_forest, v2_knn, CV=5
+# → "¿Registrar en MLflow?" → Sí
+# Salida: ✓ Registered as housing-price-model v3
+
+# 2. Promover a producción
+make promote VERSION=3
+
+# 3. Recargar modelo en API (sin reiniciar)
+curl -X POST http://localhost:8000/model/reload -H "X-API-Key: dev-api-key"
+# { "status": "success", "model_version": "v3" }
+```
+
+### Hot Reload de Modelo
+
+La API puede recargar el modelo desde MLflow sin reiniciarse:
+
+```bash
+# Recargar modelo con alias por defecto (production)
+curl -X POST http://localhost:8000/model/reload
+```
+
+**Respuesta:**
+```json
+{
+  "status": "success",
+  "message": "Model reloaded successfully",
+  "model_info": {
+    "model_type": "random_forest",
+    "preprocessing": "v2_knn",
+    "version": "2"
+  }
+}
+```
+
+### Sistema de Aliases
+
+MLflow Model Registry permite gestionar múltiples versiones:
+
+```bash
+# Ver versiones y aliases actuales
+make models
+
+# Promover versión 3 a producción
+make promote VERSION=3
+
+# La API siempre carga el modelo con alias "production"
+```
+
+---
+
+## API REST
+
+### Endpoints
+
+| Endpoint | Método | Descripción | Auth |
+|----------|--------|-------------|------|
+| `/` | GET | Información de la API | No |
+| `/health` | GET | Health check | No |
+| `/predict` | POST | Predicción individual | Sí* |
+| `/predict/batch` | POST | Predicciones en lote (máx 100) | Sí* |
+| `/model/info` | GET | Metadata del modelo cargado | No |
+| `/model/reload` | POST | Recargar modelo desde MLflow | Sí* |
+| `/metrics` | GET | Métricas Prometheus | No |
+
+*Requiere header `X-API-Key` si `API_KEY` está configurado.
+
+### Ejemplos de Uso
+
+**Predicción individual:**
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-api-key" \
   -d '{
     "CRIM": 0.00632,
     "ZN": 18.0,
@@ -296,113 +448,106 @@ curl -X POST http://localhost:8000/predict \
   }'
 ```
 
-Respuesta:
-
+**Respuesta:**
 ```json
 {
   "prediction": 30.25,
-  "model_version": "random_forest_v1_median",
+  "model_version": "random_forest_v2_knn",
   "timestamp": "2025-01-15T10:30:00Z",
   "warnings": []
 }
 ```
 
-#### Predicción en lote
-
+**Predicción en lote:**
 ```bash
 curl -X POST http://localhost:8000/predict/batch \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-api-key" \
   -d '{
     "items": [
-      {"CRIM": 0.00632, "ZN": 18.0, "INDUS": 2.31, "CHAS": 0, "NOX": 0.538, "RM": 6.575, "AGE": 65.2, "DIS": 4.09, "RAD": 1, "TAX": 296.0, "PTRATIO": 15.3, "B": 396.9, "LSTAT": 4.98},
-      {"CRIM": 0.02731, "ZN": 0.0, "INDUS": 7.07, "CHAS": 0, "NOX": 0.469, "RM": 6.421, "AGE": 78.9, "DIS": 4.9671, "RAD": 2, "TAX": 242.0, "PTRATIO": 17.8, "B": 396.9, "LSTAT": 9.14}
+      {"CRIM": 0.00632, "ZN": 18.0, ...},
+      {"CRIM": 0.02731, "ZN": 0.0, ...}
     ]
   }'
 ```
 
-#### Hot Reload de modelo
-
+**Info del modelo:**
 ```bash
-# Recargar modelo desde MLflow (alias por defecto: production)
-curl -X POST http://localhost:8000/model/reload
-
-# Recargar modelo con alias específico (staging, champion, etc.)
-curl -X POST http://localhost:8000/model/reload \
-  -H "Content-Type: application/json" \
-  -d '{"alias": "staging"}'
+curl http://localhost:8000/model/info
 ```
 
-### CLI
+### Detección de Anomalías
 
-```bash
-# Ver información del modelo actual
-uv run housing info
+La API detecta automáticamente cuando los valores de entrada están fuera del rango observado durante el entrenamiento:
 
-# Listar experimentos de MLflow
-uv run housing runs
-
-# Entrenar desde CLI
-uv run housing train --model-type gradient_boost
-
-# Promover modelo a producción
-uv run housing promote --run-id <run_id> --alias champion
+```json
+{
+  "prediction": 45.2,
+  "warnings": [
+    "Feature 'RM' value 12.5 is outside training range [3.56, 8.78]"
+  ]
+}
 ```
-
-### Docker
-
-#### Levantar servicios
-
-```bash
-# API + MLflow
-make docker-up
-
-# Solo desarrollo con hot-reload
-make docker-dev
-
-# Detener servicios
-make docker-down
-```
-
-#### Servicios disponibles
-
-| Servicio | Puerto | Descripción |
-|----------|--------|-------------|
-| API | 8000 | API de predicción |
-| MLflow | 5000 | UI de tracking |
 
 ---
 
-## Endpoints de la API
+## Docker
 
-| Endpoint | Método | Descripción | Auth |
-|----------|--------|-------------|------|
-| `/` | GET | Información de la API | No |
-| `/health` | GET | Health check | No |
-| `/predict` | POST | Realizar predicción individual | Sí* |
-| `/predict/batch` | POST | Predicciones en lote (máx 100) | Sí* |
-| `/model/info` | GET | Metadata del modelo | No |
-| `/model/reload` | POST | Recargar modelo desde MLflow (hot reload) | Sí* |
-| `/metrics` | GET | Métricas Prometheus | No |
+### Servicios
 
-*Requiere header `X-API-Key` si `API_KEY` está configurado.
+| Servicio | Puerto | Descripción |
+|----------|--------|-------------|
+| `api` | 8000 | API de predicción (FastAPI) |
+| `mlflow` | 5000 | MLflow Tracking Server + Model Registry |
+| `postgres` | 5432 | Base de datos para metadata de MLflow |
+| `minio` | 9000/9001 | Almacenamiento S3-compatible para artefactos |
 
-### Esquema de entrada (`/predict`)
+### Modos de Uso
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `CRIM` | float | Tasa de criminalidad per cápita |
-| `ZN` | float | Proporción de terreno residencial zonificado |
-| `INDUS` | float | Proporción de acres de negocios no minoristas |
-| `CHAS` | int (0/1) | Limita con río Charles |
-| `NOX` | float | Concentración de óxidos nítricos |
-| `RM` | float | Número promedio de habitaciones |
-| `AGE` | float | Proporción de unidades construidas antes de 1940 |
-| `DIS` | float | Distancia ponderada a centros de empleo |
-| `RAD` | int | Índice de accesibilidad a autopistas |
-| `TAX` | float | Tasa de impuesto a la propiedad |
-| `PTRATIO` | float | Ratio alumno-profesor |
-| `B` | float | Proporción de población |
-| `LSTAT` | float | % de población de estatus socioeconómico bajo |
+**Desarrollo (API local + infraestructura en Docker):**
+```bash
+make dev          # Levanta PostgreSQL, MinIO, MLflow
+make api          # Inicia API local con hot-reload
+```
+
+**Producción (todo en Docker):**
+```bash
+make up           # Levanta todos los servicios
+```
+
+**Detener:**
+```bash
+make down         # Detiene servicios (mantiene datos)
+make clean        # Detiene y elimina volúmenes
+```
+
+### Variables de Entorno
+
+Crear archivo `.env` desde `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| **API** | | |
+| `API_KEY` | Clave de autenticación (opcional) | - |
+| `API_PORT` | Puerto de la API | `8000` |
+| **MLflow** | | |
+| `MLFLOW_TRACKING_URI` | URI del servidor MLflow | `http://localhost:5000` |
+| `MLFLOW_MODEL_NAME` | Nombre del modelo en registry | `housing-price-model` |
+| `MLFLOW_MODEL_ALIAS` | Alias a cargar | `production` |
+| **PostgreSQL** | | |
+| `POSTGRES_USER` | Usuario de PostgreSQL | `mlflow` |
+| `POSTGRES_PASSWORD` | Password de PostgreSQL | `mlflow123` |
+| `POSTGRES_DB` | Base de datos | `mlflow` |
+| **MinIO (S3)** | | |
+| `MINIO_ROOT_USER` | Usuario de MinIO | `minioadmin` |
+| `MINIO_ROOT_PASSWORD` | Password de MinIO | `minioadmin123` |
+| `MLFLOW_BUCKET_NAME` | Bucket para artefactos | `mlflow-artifacts` |
+| **Monitoring** | | |
+| `METRICS_ENABLED` | Habilitar métricas Prometheus | `true` |
 
 ---
 
@@ -412,37 +557,31 @@ make docker-down
 
 La API expone métricas en `/metrics`:
 
-- `prediction_requests_total` - Total de predicciones realizadas
-- `prediction_latency_seconds` - Latencia de predicciones
-- `prediction_values` - Histograma de valores predichos
-- `model_load_time_seconds` - Tiempo de carga del modelo
-- `out_of_range_features_total` - Features fuera de rango detectadas
+| Métrica | Tipo | Descripción |
+|---------|------|-------------|
+| `prediction_requests_total` | Counter | Total de predicciones realizadas |
+| `prediction_latency_seconds` | Histogram | Latencia de predicciones |
+| `prediction_values` | Histogram | Distribución de valores predichos |
+| `model_load_time_seconds` | Gauge | Tiempo de carga del modelo |
+| `out_of_range_features_total` | Counter | Features fuera de rango (data drift) |
 
-### MLflow
+### MLflow UI
 
 ```bash
-# Iniciar servidor MLflow
-make mlflow
-
 # Acceder a la UI
 open http://localhost:5000
 ```
 
 Funcionalidades:
-- Tracking de experimentos y métricas
-- Comparación de runs (RMSE, MAE, R²)
-- Registro y versionado de modelos
-- Gestión de aliases (challenger/champion)
-
-### Detección de Anomalías
-
-La API detecta automáticamente cuando los valores de entrada están fuera del rango observado durante el entrenamiento, incluyendo warnings en la respuesta para alertar sobre posible data drift.
+- Comparar experimentos (métricas, parámetros)
+- Visualizar artefactos (modelo, preprocesador)
+- Gestionar Model Registry (versiones, aliases)
 
 ---
 
 ## CI/CD
 
-Pipeline automatizado con GitHub Actions (`.github/workflows/ci.yml`):
+Pipeline automatizado con GitHub Actions:
 
 ```
 ┌─────────┐    ┌─────────┐    ┌─────────┐
@@ -456,117 +595,10 @@ Pipeline automatizado con GitHub Actions (`.github/workflows/ci.yml`):
 2. **test** - Tests con pytest (cobertura mínima 70%)
 3. **build** - Construcción de imagen Docker
 
-### Ejecutar localmente
+### Ejecutar CI Localmente
 
 ```bash
-# Linting
-make lint
-
-# Tests con cobertura
-make test-cov
-
-# Pipeline completo
 make ci
-```
-
----
-
-## Machine Learning
-
-### Experimentación y Evaluación
-
-El proyecto incluye un sistema de experimentación integrado con MLflow:
-
-```bash
-# Ejecutar experimentos desde configuración YAML
-make experiment-yaml
-
-# Entrenamiento con cross-validation
-make train-cv
-
-# Ver y comparar resultados en MLflow UI
-open http://localhost:5000
-```
-
-**Nota:** Todos los resultados se loggean a MLflow. Usa la UI de MLflow para:
-- Comparar runs (seleccionar múltiples → Compare)
-- Visualizar métricas y gráficos
-- Revisar parámetros e hiperparámetros
-- Descargar artefactos
-
-#### Métricas de Evaluación
-
-| Métrica | Descripción | Uso |
-|---------|-------------|-----|
-| **RMSE** | Root Mean Squared Error | Métrica principal de optimización |
-| **MAE** | Mean Absolute Error | Error promedio en unidades originales |
-| **R²** | Coeficiente de determinación | Varianza explicada (0-1) |
-| **MAPE** | Mean Absolute Percentage Error | Error relativo porcentual |
-| **Accuracy@10%** | % predicciones dentro de ±10% | Métrica de negocio |
-
-#### Cross-Validation
-
-```bash
-# Entrenar con 5-fold cross-validation
-uv run meli train --model-type random_forest --cv --cv-splits 5
-```
-
-Resultados típicos de CV:
-```
-CV Results (5-fold):
-  RMSE: 3.21 ± 0.45
-  R²:   0.87 ± 0.05
-```
-
-#### Configuración de Experimentos (YAML)
-
-Los experimentos se configuran mediante archivos YAML en `experiments/`:
-
-```yaml
-experiment:
-  name: "housing-tuning"
-  description: "Tuning de modelos seleccionados"
-
-grid:
-  models:
-    - random_forest
-    - gradient_boost
-  preprocessors:
-    - v1_median
-    - v2_knn
-  hyperparameters:
-    random_forest:
-      n_estimators: [100, 200]
-      max_depth: [10, 15]
-
-settings:
-  enable_cv: true
-  cv_splits: 5
-```
-
-### Entrenamiento Interactivo
-
-```bash
-# Modo interactivo con selección de hiperparámetros
-make train-i
-```
-
-El modo interactivo permite:
-1. Seleccionar modelo y preprocesador
-2. Configurar hiperparámetros manualmente
-3. Habilitar cross-validation
-4. Decidir si registrar en MLflow
-
-### Promoción de Modelos
-
-Sistema champion/challenger para gestión de modelos en producción:
-
-```bash
-# Ver versiones disponibles
-make promote-list
-
-# Promover versión a producción
-make promote VERSION=4
 ```
 
 ---
@@ -577,76 +609,72 @@ make promote VERSION=4
 
 | Componente | Tecnología | Justificación |
 |------------|------------|---------------|
-| **API Framework** | FastAPI | Async nativo, validación con Pydantic, docs OpenAPI automáticas |
-| **ML Framework** | scikit-learn | Madurez, documentación, pipelines reproducibles |
-| **Experiment Tracking** | MLflow | Estándar de industria, open-source, Model Registry |
-| **Containerización** | Docker | Portabilidad, reproducibilidad, estándar de despliegue |
-| **Package Manager** | uv | Velocidad de instalación, lockfile determinístico |
-| **CLI** | Typer + Rich | Developer experience, autocompletado, output formateado |
+| API Framework | FastAPI | Async, validación Pydantic, docs automáticas |
+| ML Framework | scikit-learn | Madurez, pipelines reproducibles |
+| Experiment Tracking | MLflow | Estándar de industria, Model Registry |
+| Containerización | Docker | Portabilidad, reproducibilidad |
+| Package Manager | uv | Velocidad, lockfile determinístico |
+| CLI | Typer + Rich | Autocompletado, output formateado |
+| DB (MLflow) | PostgreSQL | Robustez, producción-ready |
+| Artifacts Storage | MinIO | S3-compatible, self-hosted |
 
 ### Patrones de Diseño
 
 | Patrón | Aplicación | Beneficio |
 |--------|------------|-----------|
-| **Strategy** | Modelos y preprocesadores | Intercambiabilidad sin modificar código cliente |
+| **Strategy** | Modelos y preprocesadores | Intercambiabilidad sin modificar código |
 | **Factory** | Creación de instancias | Registro centralizado, extensibilidad |
-| **Artifact Bundle** | Empaquetado | Modelo + preprocesador + metadata en unidad atómica |
-
-### Modelo Seleccionado
-
-**Random Forest** como modelo por defecto por:
-- Balance entre rendimiento y complejidad interpretativa
-- Robustez ante outliers y datos ruidosos
-- Feature importance nativa para explicabilidad
-- Sin necesidad estricta de normalización
+| **Artifact Bundle** | Empaquetado | Modelo + preprocesador + metadata atómico |
 
 ### Estrategias de Preprocesamiento
 
 | Versión | Estrategia | Caso de uso |
 |---------|------------|-------------|
-| `v1_median` | SimpleImputer(median) + StandardScaler | Baseline, pocos missing values |
-| `v2_knn` | KNNImputer + StandardScaler | Missing values con correlaciones |
-| `v3_iterative` | IterativeImputer + StandardScaler | Patrones complejos de missing |
+| `v1_median` | SimpleImputer(median) + StandardScaler | Baseline |
+| `v2_knn` | KNNImputer + StandardScaler | Missing values correlacionados |
+| `v3_iterative` | IterativeImputer + StandardScaler | Patrones complejos |
 
-### Seguridad
+---
 
-- API Key opcional vía header `X-API-Key`
-- Usuario no-root en contenedor Docker
-- Validación exhaustiva de inputs con Pydantic
-- Sin exposición de información sensible en errores
+## Estado Actual y Mejoras
+
+### Implementado
+
+- [x] Pipeline de entrenamiento reproducible
+- [x] API REST con FastAPI (/predict, /predict/batch)
+- [x] MLflow Tracking + Model Registry
+- [x] Múltiples modelos (RF, GB, XGB, Linear)
+- [x] Múltiples preprocesadores (v1, v2, v3)
+- [x] Cross-validation integrado
+- [x] Hot reload de modelo sin downtime
+- [x] Monitoreo con Prometheus
+- [x] Detección de anomalías (data drift básico)
+- [x] CI/CD con GitHub Actions
+- [x] Docker Compose con PostgreSQL + MinIO
+- [x] CLI completo (train, runs, register, promote)
+- [x] Autenticación API Key opcional
+
+### Mejoras Futuras
+
+| Mejora | Prioridad | Descripción |
+|--------|-----------|-------------|
+| Reentrenamiento automático | Media | Scheduler para entrenar periódicamente |
+| Dashboard Grafana | Baja | Visualización de métricas Prometheus |
+| Rate limiting | Media | Protección contra abuso de API |
+| A/B testing | Baja | Comparar modelos en producción |
+| Feature store | Baja | Consistencia train/serve |
+| SHAP values | Baja | Explicabilidad de predicciones |
 
 ---
 
 ## Nota sobre Archivos Incluidos
 
-> **⚠️ Para evaluación de la prueba técnica:** Los archivos `mlflow.db`, `mlruns/` y `models/` están incluidos en el repositorio para que el proyecto funcione **out-of-the-box** al clonarlo, sin necesidad de entrenar primero.
+> **Para evaluación:** Los archivos `models/` y `seed/` están incluidos para que el proyecto funcione **out-of-the-box** sin necesidad de entrenar primero.
 >
-> **En un ambiente de producción real**, estos archivos **NO deberían versionarse** en Git:
-> - `mlflow.db` → Base de datos en almacenamiento persistente (PostgreSQL, MySQL)
-> - `mlruns/` → Almacenamiento de artefactos en S3, GCS, o MinIO
-> - `models/*.joblib` → Servidos desde MLflow Model Registry o almacenamiento de artefactos
-
----
-
-## Posibles Mejoras
-
-### Corto Plazo
-- [ ] Tests de integración end-to-end para la API
-- [ ] Validación de schema del dataset en tiempo de carga
-- [ ] Rate limiting para protección contra abuso
-- [ ] Caché de predicciones frecuentes (Redis)
-
-### Mediano Plazo
-- [ ] A/B testing entre modelos champion vs challenger
-- [ ] Reentrenamiento automático programado
-- [ ] Dashboard de monitoreo con Grafana
-- [ ] Alertas automáticas por data drift
-
-### Largo Plazo
-- [ ] Serving distribuido con Ray Serve o Seldon Core
-- [ ] Feature store para consistencia train/serve
-- [ ] Endpoint de explicabilidad con SHAP values
-- [ ] Manifests de Kubernetes para orquestación
+> **En producción real**, estos archivos NO deberían versionarse:
+> - `mlflow.db` → PostgreSQL
+> - `mlruns/` → MinIO/S3
+> - `models/*.joblib` → MLflow Model Registry
 
 ---
 
