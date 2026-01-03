@@ -88,8 +88,7 @@ def train_model(
 
     # Calculate feature stats for monitoring
     feature_stats = {
-        col: {"min": float(X[col].min()), "max": float(X[col].max())}
-        for col in FEATURE_COLUMNS
+        col: {"min": float(X[col].min()), "max": float(X[col].max())} for col in FEATURE_COLUMNS
     }
 
     # Split data
