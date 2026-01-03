@@ -1,18 +1,16 @@
 """Core training logic shared by CLI and experiment runner."""
 
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-import tempfile
 
 import mlflow
-from mlflow.models import infer_signature
 import mlflow.sklearn
+from mlflow.models import infer_signature
 from sklearn.model_selection import train_test_split
 
-# Import strategies to register them with factories
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
-
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
 from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
