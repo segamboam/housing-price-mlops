@@ -183,7 +183,7 @@ def seed_mlflow() -> None:
     print("\n" + "=" * 60)
     print("SEED COMPLETE!")
     print("=" * 60)
-    print(f"MLflow UI:      {tracking_uri}")
+    print(f"MLflow UI:      {settings.mlflow_tracking_uri}")
     print(f"MinIO Console:  http://localhost:{settings.minio_console_port}")
     print(f"  User: {settings.minio_root_user}")
     print(f"  Pass: {settings.minio_root_password}")

@@ -10,9 +10,8 @@ Usage:
 import argparse
 import sys
 import time
-
-import urllib.request
 import urllib.error
+import urllib.request
 
 
 def wait_for_mlflow(url: str = "http://localhost:5000/health", timeout: int = 120) -> bool:

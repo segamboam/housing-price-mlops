@@ -26,6 +26,7 @@ mlruns/
 CHECKLIST.md
 .coverage
 PLAN_MLOPS.md
+PROJECT_REPORT.md
 *.docx
 
 *.pdf
