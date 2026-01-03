@@ -71,7 +71,7 @@ def runs(
             )
 
         console.print(f"\n[bold]Experiment:[/bold] {experiment}")
-        console.print(f"[dim]Tracking URI: {uri}[/dim]\n")
+        console.print(f"[dim]Tracking URI: {mlflow.get_tracking_uri()}[/dim]\n")
         console.print(create_runs_table(runs_list))
         console.print(f"\n[dim]Showing {len(runs_list)} of {len(runs_data)} runs[/dim]")
 

@@ -114,7 +114,7 @@ def create_runs_table(runs: list[dict]) -> Table:
     best_r2 = max((r.get("r2", 0) for r in runs), default=0)
 
     for run in runs:
-        run_id = run.get("run_id", "")[:8]
+        run_id = run.get("run_id", "")
         model = run.get("model_type", "unknown")
         preproc = run.get("preprocessing", "unknown")
         rmse = run.get("rmse", 0)
@@ -152,7 +152,7 @@ def create_versions_table(versions: list[dict]) -> Table:
         table.add_row(
             str(v.get("version", "")),
             aliases,
-            v.get("run_id", "")[:8],
+            v.get("run_id", ""),
             v.get("created", ""),
             style=style,
         )
