@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 # Import strategies to register them with factories
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
+
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
 from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
