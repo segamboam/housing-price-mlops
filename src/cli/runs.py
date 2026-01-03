@@ -7,6 +7,7 @@ import typer
 
 from src.cli.utils import console, create_runs_table, error_panel
 from src.config.settings import get_settings
+from src.utils.mlflow_helpers import initialize_mlflow
 
 settings = get_settings()
 
@@ -31,8 +32,7 @@ def runs(
     ),
 ) -> None:
     """List recent MLflow experiment runs."""
-    uri = tracking_uri or str(settings.mlflow_tracking_uri)
-    mlflow.set_tracking_uri(uri)
+    initialize_mlflow(tracking_uri=tracking_uri, configure_s3=False)
 
     try:
         exp = mlflow.get_experiment_by_name(experiment)

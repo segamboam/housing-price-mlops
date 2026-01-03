@@ -8,6 +8,7 @@ from mlflow import MlflowClient
 
 from src.cli.utils import console, create_versions_table, error_panel, success_panel
 from src.config.settings import get_settings
+from src.utils.mlflow_helpers import initialize_mlflow
 
 settings = get_settings()
 
@@ -70,9 +71,8 @@ def promote(
     ),
 ) -> None:
     """Promote a model version to production (or other alias)."""
+    client = initialize_mlflow(tracking_uri=tracking_uri, configure_s3=False)
     uri = tracking_uri or str(settings.mlflow_tracking_uri)
-    mlflow.set_tracking_uri(uri)
-    client = MlflowClient()
 
     console.print(f"[dim]Tracking URI: {uri}[/dim]\n")
 

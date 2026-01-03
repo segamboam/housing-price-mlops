@@ -20,28 +20,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import mlflow
-from mlflow import MlflowClient
 
 from src.config.settings import get_settings
+from src.utils.mlflow_helpers import initialize_mlflow, tag_model_version
 
 
 def seed_mlflow() -> None:
     """Seed MLflow with the pre-trained model from seed/artifact_bundle/."""
     settings = get_settings()
 
-    # Configure S3/MinIO access
-    settings.configure_mlflow_s3()
-
-    # Set tracking URI
-    tracking_uri = settings.mlflow_tracking_uri
-    mlflow.set_tracking_uri(tracking_uri)
-
-    print(f"Seeding MLflow at: {tracking_uri}")
+    # Initialize MLflow
+    print(f"Seeding MLflow at: {settings.mlflow_tracking_uri}")
     print(f"Artifact store: {settings.s3_artifact_root}")
 
     # Check connection
     try:
-        client = MlflowClient()
+        client = initialize_mlflow()
         experiments = client.search_experiments()
         print(f"Connected! Found {len(experiments)} existing experiments")
     except Exception as e:
@@ -161,29 +155,18 @@ def seed_mlflow() -> None:
             latest_version = max(versions, key=lambda v: int(v.version))
             version_num = latest_version.version
 
-            # Add description to model version (MLflow 3.x)
+            # Add description and tags
             test_r2 = test_metrics.get("r2", 0)
             test_rmse = test_metrics.get("rmse", 0)
-            version_description = (
-                f"Seed model: {model_type} with {preprocessing} preprocessing. "
-                f"Test R²: {test_r2:.4f}, RMSE: {test_rmse:.4f}"
-            )
-            client.update_model_version(
-                name=settings.mlflow_model_name,
+            tag_model_version(
+                client=client,
+                model_name=settings.mlflow_model_name,
                 version=version_num,
-                description=version_description,
-            )
-
-            # Add tags to model version for filtering
-            client.set_model_version_tag(
-                settings.mlflow_model_name, version_num, "model_type", model_type
-            )
-            client.set_model_version_tag(
-                settings.mlflow_model_name, version_num, "preprocessing", preprocessing
-            )
-            client.set_model_version_tag(settings.mlflow_model_name, version_num, "source", "seed")
-            client.set_model_version_tag(
-                settings.mlflow_model_name, version_num, "test_r2", f"{test_r2:.4f}"
+                model_type=model_type,
+                preprocessing=preprocessing,
+                test_r2=test_r2,
+                test_rmse=test_rmse,
+                source="seed",
             )
 
             # Set production alias

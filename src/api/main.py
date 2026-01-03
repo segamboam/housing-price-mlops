@@ -45,6 +45,11 @@ model_source: str | None = None
 _reload_lock = asyncio.Lock()
 
 
+def features_to_dict(features: HousingFeatures) -> dict[str, float]:
+    """Convert HousingFeatures object to dictionary with correct column order."""
+    return {col: getattr(features, col) for col in FEATURE_COLUMNS}
+
+
 def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
     """Load artifact bundle from configured path."""
     bundle_path = settings.artifact_bundle_path
@@ -331,8 +336,7 @@ async def predict(
         warnings = check_feature_ranges(features, feature_stats)
 
     # Create DataFrame with features in correct order
-    feature_dict = {col: getattr(features, col) for col in FEATURE_COLUMNS}
-    X = pd.DataFrame([feature_dict])
+    X = pd.DataFrame([features_to_dict(features)])
 
     # Bundle handles preprocessing + prediction
     prediction = artifact_bundle.predict(X)[0]
@@ -389,12 +393,7 @@ async def predict_batch(
         all_warnings.append(warnings)
 
     # Build DataFrame with all items for efficient batch processing
-    rows = []
-    for features in items:
-        row = {col: getattr(features, col) for col in FEATURE_COLUMNS}
-        rows.append(row)
-
-    X = pd.DataFrame(rows)
+    X = pd.DataFrame([features_to_dict(features) for features in items])
 
     # Predict all at once
     predictions = artifact_bundle.predict(X)

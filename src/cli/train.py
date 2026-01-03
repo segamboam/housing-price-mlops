@@ -2,7 +2,6 @@
 
 import mlflow
 import typer
-from mlflow import MlflowClient
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.cli.utils import (
@@ -22,6 +21,7 @@ from src.data.preprocessing.factory import PreprocessorFactory
 from src.models.evaluate import generate_evaluation_report, save_report
 from src.models.factory import ModelFactory
 from src.training.core import train_model
+from src.utils.mlflow_helpers import initialize_mlflow, tag_model_version
 
 # Get settings for defaults
 _settings = get_settings()
@@ -156,23 +156,16 @@ def train() -> None:
         registered_version = reg_result.version
 
         # Add description and tags to the model version
-        client = MlflowClient()
-        version_description = (
-            f"{model_type} with {preprocessing} preprocessing. "
-            f"Test R²: {result.test_metrics['r2']:.4f}, "
-            f"RMSE: {result.test_metrics['rmse']:.4f}"
-        )
-        client.update_model_version(
-            name=model_name,
+        client = initialize_mlflow()
+        tag_model_version(
+            client=client,
+            model_name=model_name,
             version=registered_version,
-            description=version_description,
-        )
-
-        # Add tags to model version
-        client.set_model_version_tag(model_name, registered_version, "model_type", model_type)
-        client.set_model_version_tag(model_name, registered_version, "preprocessing", preprocessing)
-        client.set_model_version_tag(
-            model_name, registered_version, "test_r2", f"{result.test_metrics['r2']:.4f}"
+            model_type=model_type,
+            preprocessing=preprocessing,
+            test_r2=result.test_metrics["r2"],
+            test_rmse=result.test_metrics["rmse"],
+            source="cli",
         )
 
         console.print(

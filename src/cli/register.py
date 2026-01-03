@@ -2,10 +2,10 @@
 
 import mlflow
 import typer
-from mlflow import MlflowClient
 
 from src.cli.utils import console, error_panel, success_panel
 from src.config.settings import get_settings
+from src.utils.mlflow_helpers import initialize_mlflow, tag_model_version
 
 settings = get_settings()
 
@@ -37,10 +37,8 @@ def register(
         uv run python -m src.cli.main register abc123def --model-name my-model
     """
     # Configure MLflow
-    settings.configure_mlflow_s3()
+    client = initialize_mlflow(tracking_uri=tracking_uri)
     uri = tracking_uri or str(settings.mlflow_tracking_uri)
-    mlflow.set_tracking_uri(uri)
-    client = MlflowClient()
 
     console.print(f"[dim]Tracking URI: {uri}[/dim]\n")
 
@@ -117,19 +115,16 @@ def register(
         version = result.version
 
         # Add description and tags
-        version_description = (
-            f"{model_type} with {preprocessing} preprocessing. "
-            f"Test R²: {test_r2:.4f}, RMSE: {test_rmse:.4f}"
-        )
-        client.update_model_version(
-            name=effective_model_name,
+        tag_model_version(
+            client=client,
+            model_name=effective_model_name,
             version=version,
-            description=version_description,
+            model_type=model_type,
+            preprocessing=preprocessing,
+            test_r2=test_r2,
+            test_rmse=test_rmse,
+            source="cli_register",
         )
-        client.set_model_version_tag(effective_model_name, version, "model_type", model_type)
-        client.set_model_version_tag(effective_model_name, version, "preprocessing", preprocessing)
-        client.set_model_version_tag(effective_model_name, version, "test_r2", f"{test_r2:.4f}")
-        client.set_model_version_tag(effective_model_name, version, "source", "cli_register")
 
         console.print(
             success_panel(

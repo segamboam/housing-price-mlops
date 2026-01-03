@@ -14,6 +14,7 @@ import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
+from src.utils.mlflow_helpers import initialize_mlflow
 from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
 from src.data.preprocessing.base import BasePreprocessor
 from src.data.preprocessing.factory import PreprocessorFactory
@@ -76,8 +77,7 @@ def train_model(
 
     # Configure MLflow
     settings = get_settings()
-    settings.configure_mlflow_s3()
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    initialize_mlflow()
     mlflow.set_experiment(settings.mlflow_experiment_name)
 
     # Load data
