@@ -14,6 +14,7 @@ RUFF := uv run ruff
 UVICORN := uv run uvicorn
 CLI := $(PYTHON) -m src.cli.main
 COMPOSE := docker compose
+DVC := uv run dvc
 
 # Paths
 SRC := src
@@ -33,6 +34,8 @@ MLFLOW_PORT := 5000
 #------------------------------------------------------------------------------
 .PHONY: help \
         install setup \
+        dvc-init dvc-status dvc-push dvc-pull \
+        preprocess cache-status cache-clear \
         train experiment \
         runs register models promote info \
         api \
@@ -48,11 +51,22 @@ help: ## Show this help message
 	@echo ""
 	@echo "\033[1mSETUP\033[0m"
 	@echo "  \033[36minstall\033[0m          Install dependencies"
-	@echo "  \033[36msetup\033[0m            Install dependencies + create directories"
+	@echo "  \033[36msetup\033[0m            Install + init DVC + create directories"
 	@echo ""
-	@echo "\033[1mTRAINING\033[0m"
+	@echo "\033[1mTRAINING\033[0m (uses preprocessing cache automatically)"
 	@echo "  \033[36mtrain\033[0m            Train model interactively"
-	@echo "  \033[36mexperiment\033[0m       Run experiment grid from YAML config"
+	@echo "  \033[36mexperiment\033[0m       Run experiment grid (src/experiments/config.yaml)"
+	@echo ""
+	@echo "\033[1mPREPROCESSING CACHE\033[0m"
+	@echo "  \033[36mpreprocess\033[0m       Create preprocessing cache (VERSION=v1_median)"
+	@echo "  \033[36mcache-status\033[0m     Show cached preprocessing versions"
+	@echo "  \033[36mcache-clear\033[0m      Clear local preprocessing cache"
+	@echo ""
+	@echo "\033[1mDVC (Data Version Control)\033[0m"
+	@echo "  \033[36mdvc-init\033[0m         Initialize DVC with MinIO remote"
+	@echo "  \033[36mdvc-status\033[0m       Show DVC cache status"
+	@echo "  \033[36mdvc-push\033[0m         Push cached data to MinIO"
+	@echo "  \033[36mdvc-pull\033[0m         Pull cached data from MinIO"
 	@echo ""
 	@echo "\033[1mMODEL MANAGEMENT\033[0m"
 	@echo "  \033[36mruns\033[0m             List MLflow experiment runs"
@@ -65,8 +79,8 @@ help: ## Show this help message
 	@echo "  \033[36mapi\033[0m              Start API locally with hot-reload"
 	@echo ""
 	@echo "\033[1mDOCKER\033[0m"
-	@echo "  \033[36mup\033[0m               Start full stack (infra + API in containers)"
-	@echo "  \033[36mdev\033[0m              Start infrastructure only (for local API development)"
+	@echo "  \033[36mup\033[0m               Start full stack (infra + API)"
+	@echo "  \033[36mdev\033[0m              Start infrastructure only (for local development)"
 	@echo "  \033[36mdown\033[0m             Stop all services"
 	@echo "  \033[36mlogs\033[0m             View service logs"
 	@echo "  \033[36mclean\033[0m            Stop services and remove volumes"
@@ -74,7 +88,7 @@ help: ## Show this help message
 	@echo "\033[1mTESTING & QUALITY\033[0m"
 	@echo "  \033[36mtest\033[0m             Run tests"
 	@echo "  \033[36mlint\033[0m             Run linter (ruff)"
-	@echo "  \033[36mci\033[0m               Run full CI pipeline (lint + test + docker build)"
+	@echo "  \033[36mci\033[0m               Run full CI pipeline"
 	@echo ""
 	@echo "\033[1mDEMO\033[0m"
 	@echo "  \033[36mseed\033[0m             Seed MLflow with pre-trained model"
@@ -86,18 +100,89 @@ help: ## Show this help message
 install: ## Install dependencies
 	uv sync
 
-setup: install ## Install dependencies + create directories
-	@mkdir -p models data
+setup: install dvc-init ## Install + init DVC + create directories
+	@mkdir -p models data data/processed
 	@echo "Setup complete!"
 
 #==============================================================================
-# TRAINING
+# TRAINING (uses preprocessing cache automatically)
 #==============================================================================
-train: ## Train model interactively
+train: ## Train model interactively (uses preprocessing cache)
+	@echo "Training with preprocessing cache..."
+	@echo "(Cache: local → MinIO → create if needed)"
+	@echo ""
 	$(CLI) train
 
-experiment: ## Run experiment grid from YAML config
+experiment: ## Run experiment grid from config (uses preprocessing cache)
+	@echo "Running experiments with preprocessing cache..."
+	@echo "Config: src/experiments/config.yaml"
+	@echo "(Each preprocessing is computed only once)"
+	@echo ""
 	$(PYTHON) scripts/run_experiment.py --config src/experiments/config.yaml
+
+#==============================================================================
+# PREPROCESSING CACHE
+#==============================================================================
+preprocess: ## Create preprocessing cache. Usage: make preprocess VERSION=v1_median
+ifndef VERSION
+	@echo "Usage: make preprocess VERSION=<version>"
+	@echo ""
+	@echo "Available versions:"
+	@$(PYTHON) -m src.data.preprocess --list
+	@exit 1
+endif
+	$(PYTHON) -m src.data.preprocess --version $(VERSION)
+	@echo ""
+	@echo "Pushing to MinIO..."
+	$(DVC) push data/processed/$(VERSION)/ 2>/dev/null || true
+
+cache-status: ## Show cached preprocessing versions
+	@echo "Preprocessing Cache Status"
+	@echo "=========================="
+	@echo ""
+	@echo "Local cache (data/processed/):"
+	@if [ -d "data/processed" ] && [ "$$(ls -A data/processed 2>/dev/null)" ]; then \
+		for dir in data/processed/*/; do \
+			if [ -d "$$dir" ]; then \
+				version=$$(basename "$$dir"); \
+				if [ -f "$$dir/metadata.json" ]; then \
+					echo "  ✓ $$version (cached)"; \
+				else \
+					echo "  ⚠ $$version (incomplete)"; \
+				fi; \
+			fi; \
+		done; \
+	else \
+		echo "  (empty - will be created on first train/experiment)"; \
+	fi
+	@echo ""
+	@echo "Available preprocessing strategies:"
+	@$(PYTHON) -m src.data.preprocess --list 2>/dev/null || echo "  Run 'make install' first"
+
+cache-clear: ## Clear local preprocessing cache
+	@echo "Clearing local preprocessing cache..."
+	@rm -rf data/processed/*/
+	@echo "Cache cleared. Run 'make dvc-pull' to restore from MinIO."
+
+#==============================================================================
+# DVC (Data Version Control)
+#==============================================================================
+dvc-init: ## Initialize DVC with MinIO remote
+	$(PYTHON) scripts/init_dvc.py
+
+dvc-status: ## Show DVC status
+	@echo "DVC Remote: MinIO (s3://dvc-artifacts)"
+	@echo ""
+	@$(DVC) version 2>/dev/null | head -1 || echo "DVC not installed"
+	@echo ""
+	@echo "Local cache size:"
+	@du -sh .dvc/cache 2>/dev/null || echo "  (empty)"
+
+dvc-push: ## Push cached data to MinIO
+	$(DVC) push data/processed/ 2>/dev/null || echo "Nothing to push or MinIO not available"
+
+dvc-pull: ## Pull cached data from MinIO
+	$(DVC) pull data/processed/ 2>/dev/null || echo "Nothing to pull or MinIO not available"
 
 #==============================================================================
 # MODEL MANAGEMENT

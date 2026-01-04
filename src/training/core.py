@@ -1,4 +1,12 @@
-"""Core training logic shared by CLI and experiment runner."""
+"""Core training logic shared by CLI and experiment runner.
+
+This module uses the preprocessing cache system which:
+1. Checks if preprocessed data exists locally
+2. If not, tries to pull from DVC remote (MinIO)
+3. If not in remote, creates and pushes to remote
+
+This ensures preprocessed data is computed only once and shared across runs.
+"""
 
 import tempfile
 from dataclasses import dataclass
@@ -7,13 +15,13 @@ from datetime import datetime
 import mlflow
 import mlflow.sklearn
 from mlflow.models import infer_signature
-from sklearn.model_selection import train_test_split
 
 import src.data.preprocessing.strategies  # noqa: F401
 import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
-from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN, load_housing_data
+from src.data.cache import get_cached_data
+from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN
 from src.data.preprocessing.base import BasePreprocessor
 from src.data.preprocessing.factory import PreprocessorFactory
 from src.models.base import BaseModel
@@ -43,7 +51,7 @@ class TrainingResult:
 def train_model(
     model_type: str,
     preprocessing: str,
-    data_path: str = "data/HousingData.csv",
+    data_path: str = "data/HousingData.csv",  # Kept for compatibility but not used
     test_size: float = 0.2,
     random_state: int = 42,
     hyperparameters: dict | None = None,
@@ -55,12 +63,15 @@ def train_model(
     """Train a model with the given configuration.
 
     This is the core training function used by both the CLI and experiment runner.
-    It handles data loading, preprocessing, training, evaluation, and MLflow logging.
+    It uses the preprocessing cache system to avoid redundant computation:
+    - If cache exists locally, uses it
+    - If not, tries to pull from DVC remote (MinIO)
+    - If not in remote, computes and pushes to remote
 
     Args:
         model_type: Type of model to train (e.g., 'gradient_boost', 'random_forest').
         preprocessing: Preprocessing strategy (e.g., 'v2_knn', 'v3_iterative').
-        data_path: Path to the training data CSV.
+        data_path: Path to the training data CSV (kept for compatibility).
         test_size: Fraction of data to use for testing.
         random_state: Random seed for reproducibility.
         hyperparameters: Optional model hyperparameters.
@@ -79,28 +90,26 @@ def train_model(
     initialize_mlflow()
     mlflow.set_experiment(settings.mlflow_experiment_name)
 
-    # Load data
-    df = load_housing_data(data_path)
-    dataset_hash = compute_dataset_hash(df)
-
-    X = df[FEATURE_COLUMNS]
-    y = df[TARGET_COLUMN]
-
-    # Calculate feature stats for monitoring
-    feature_stats = {
-        col: {"min": float(X[col].min()), "max": float(X[col].max())} for col in FEATURE_COLUMNS
-    }
-
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
+    # Get preprocessed data from cache (or create if needed)
+    X_train, X_test, y_train, y_test, metadata, preprocessor_pipeline = get_cached_data(
+        preprocessing_version=preprocessing,
+        test_size=test_size,
+        random_state=random_state,
     )
 
-    # Preprocess
+    # Reconstruct preprocessor object with the cached pipeline
     preprocessor = PreprocessorFactory.create(preprocessing)
-    preprocessor.fit(X_train)
-    X_train_transformed = preprocessor.transform(X_train)
-    X_test_transformed = preprocessor.transform(X_test)
+    preprocessor.pipeline = preprocessor_pipeline
+    preprocessor.feature_names = FEATURE_COLUMNS
+
+    # Calculate feature stats from preprocessed data
+    feature_stats = {
+        col: {
+            "min": float(X_train[:, i].min()),
+            "max": float(X_train[:, i].max()),
+        }
+        for i, col in enumerate(FEATURE_COLUMNS)
+    }
 
     # Build run name
     if run_name is None:
@@ -114,8 +123,10 @@ def train_model(
             {
                 "model_type": model_type,
                 "preprocessing": preprocessing,
+                "preprocessing_version": metadata.get("preprocessing_version", preprocessing),
                 "source": source_tag,
                 "environment": "development",
+                "cache_used": "true",
             }
         )
 
@@ -126,8 +137,8 @@ def train_model(
                 "preprocessing_strategy": preprocessing,
                 "test_size": test_size,
                 "random_state": random_state,
-                "n_samples": len(df),
-                "dataset_hash": dataset_hash,
+                "n_train_samples": len(y_train),
+                "n_test_samples": len(y_test),
                 "enable_cv": enable_cv,
             }
         )
@@ -139,14 +150,14 @@ def train_model(
         # Create and train model
         model = ModelFactory.create(model_type)
         train_params = {"random_state": random_state, **hyperparameters}
-        model.train(X_train_transformed, y_train.values, **train_params)
+        model.train(X_train, y_train, **train_params)
 
         # Log model params
         mlflow.log_params({f"model_{k}": v for k, v in model.params.items()})
 
         # Evaluate
-        train_result = evaluate_model(model.model, X_train_transformed, y_train.values)
-        test_result = evaluate_model(model.model, X_test_transformed, y_test.values)
+        train_result = evaluate_model(model.model, X_train, y_train)
+        test_result = evaluate_model(model.model, X_test, y_test)
 
         # Log metrics
         for prefix, metrics in [
@@ -161,8 +172,8 @@ def train_model(
         if enable_cv:
             cv_result = perform_cross_validation(
                 model.model,
-                X_train_transformed,
-                y_train.values,
+                X_train,
+                y_train,
                 n_splits=cv_splits,
                 random_state=random_state,
             )
@@ -195,8 +206,8 @@ def train_model(
 
         # Log model with signature
         signature = infer_signature(
-            X_train_transformed,
-            model.model.predict(X_train_transformed[:1]),
+            X_train,
+            model.model.predict(X_train[:1]),
         )
 
         model_artifact_path = f"sklearn_{model_type}"

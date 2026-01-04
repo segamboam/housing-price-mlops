@@ -4,6 +4,8 @@
 This script uploads the pre-trained artifact bundle from seed/ to MLflow
 (PostgreSQL + MinIO) and registers it as the production model.
 
+It also ensures DVC is initialized for data versioning.
+
 Usage:
     # With Docker infrastructure running:
     uv run python scripts/seed_mlflow.py
@@ -25,8 +27,24 @@ from src.config.settings import get_settings
 from src.utils.mlflow_helpers import initialize_mlflow, tag_model_version
 
 
+def ensure_dvc_initialized() -> None:
+    """Ensure DVC is initialized for the ML pipeline.
+    
+    This runs the DVC initialization which:
+    1. Initializes DVC if needed
+    2. Configures MinIO remote
+    3. Verifies raw data exists in Git
+    """
+    from scripts.init_dvc import init_dvc
+    init_dvc()
+    print()
+
+
 def seed_mlflow() -> None:
     """Seed MLflow with the pre-trained model from seed/artifact_bundle/."""
+    # Ensure DVC is initialized first
+    ensure_dvc_initialized()
+    
     settings = get_settings()
 
     # Initialize MLflow
