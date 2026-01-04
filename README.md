@@ -763,6 +763,7 @@ curl http://localhost:5000/health    # Health check de MLflow
 
 | Mejora | Descripción | Justificación |
 |--------|-------------|---------------|
+| **Versionamiento de Datos** | Control de versiones para datasets (ej: DVC, LakeFS) | Reproducibilidad completa de experimentos históricos |
 | **Dashboard Grafana** | Visualización de métricas Prometheus | Monitoreo en tiempo real de latencia y errores |
 | **Detección de Drift** | Alertas con PSI/KS-test | Detectar cuándo el modelo necesita reentrenamiento |
 | **Explicabilidad (SHAP)** | Endpoint `/explain` con importancia de features | Transparencia en decisiones de crédito |
