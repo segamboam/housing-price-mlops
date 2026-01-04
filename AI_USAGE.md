@@ -1,43 +1,42 @@
 # Uso de Herramientas de IA
 
-Este documento describe las herramientas de inteligencia artificial utilizadas durante el desarrollo de este proyecto MLOps.
+Este documento describe cómo utilicé herramientas de IA en el desarrollo de este proyecto.
+
+## Enfoque de Desarrollo
+
+Desarrollé este proyecto con un enfoque de **desarrollo asistido por IA**, donde las herramientas funcionaron como aceleradores de productividad bajo mi dirección y supervisión.
 
 ## Herramientas Utilizadas
 
-### Google AI Studio
-**Propósito:** Planificación inicial y análisis arquitectónico
+- **Google AI Studio**: Análisis inicial del problema y planificación
+- **Claude (Anthropic)**: Generación y refinamiento de código
+- **Cursor**: IDE con asistencia contextual
 
-- Análisis y comprensión del dataset Boston Housing
-- Diseño de la arquitectura general del sistema
-- Planificación de patrones de diseño (Strategy, Factory)
-- Evaluación de trade-offs entre diferentes enfoques
+## Mi Contribución Directa
 
-### Claude Code (Anthropic)
-**Propósito:** Implementación y desarrollo principal
+### Decisiones de Arquitectura
+- **Stack tecnológico**: Elegí MLflow por mi experiencia previa en proyectos ML, FastAPI porque es mi herramienta de uso diario (asincronía, Pydantic), y Docker Compose para orquestación
+- **Patrón Strategy**: Analicé el requerimiento de intercambiabilidad de modelos y diseñé la solución
+- **Artifact Bundle**: Diseñé el empaquetado para centralizar modelo y preprocesador como unidad atómica
+- **Infraestructura robusta**: Decidí usar PostgreSQL + MinI para lograr un setup production-ready
 
-- Implementación de todas las funcionalidades core
-- Desarrollo de la API REST con FastAPI
-- Creación del pipeline de entrenamiento
-- Integración con MLflow (tracking, registry, artifacts)
-- Configuración de Docker y docker-compose
-- Pipeline CI/CD con GitHub Actions
-- Suite de tests con pytest
-- Documentación técnica
+### Implementaciones y Funcionalidades
+- Pedí específicamente el sistema de CLI y experiments (no sugerido por IA)
+- Creé el script de seed para facilitar la evaluación del proyecto
+- Configuré Ruff y los estándares de código
 
-### Cursor
-**Propósito:** Refinamiento y desarrollo asistido
+### Iteraciones y Resolución de Problemas
+- Iteré múltiples veces en la integración MLflow con fuentes externas
+- Ajusté el sistema de guardado de modelo + preprocesador
+- Debuggeé y corregí código generado
 
-- Refinamiento de código e iteraciones rápidas
-- Correcciones puntuales y ajustes menores
-- Desarrollo asistido por IDE con contexto del proyecto
+## Principios que Apliqué
 
-## Principios Aplicados
-
-1. **Revisión Humana**: Todo código generado por IA fue revisado manualmente antes de ser integrado
-2. **Testing**: Todas las funcionalidades fueron validadas con tests automatizados
-3. **Supervisión Arquitectónica**: Las decisiones de arquitectura fueron tomadas con criterio humano
-4. **Responsabilidad**: El desarrollador mantiene responsabilidad total sobre la calidad y seguridad del código final
+1. **Dirección propia**: Tomé las decisiones de arquitectura y diseño con criterio basado en mi experiencia
+2. **Supervisión activa**: Revisé y ajusté todo el código generado según las necesidades del proyecto
+3. **Testing**: Supervisé el desarrollo de la suite de tests para validar funcionalidad
+4. **Comprensión completa**: Puedo explicar y defender cada decisión técnica del proyecto
 
 ## Transparencia
 
-Esta declaración sigue las mejores prácticas de desarrollo asistido por IA, reconociendo las herramientas utilizadas mientras se mantiene plena responsabilidad sobre el producto final.
+Reconozco el uso de herramientas de IA como aceleradores de desarrollo. Mi valor agregado está en la dirección técnica, las decisiones arquitectónicas y la capacidad de construir, mantener y evolucionar el sistema.

@@ -2,39 +2,41 @@
 
 Sistema MLOps para predicción de precios de viviendas mediante API REST. Stack 100% open-source, portable e independiente de proveedores cloud.
 
+> **Out-of-the-box:** El proyecto incluye un modelo pre-entrenado para funcionar inmediatamente sin necesidad de entrenar primero.
+
+### Highlights
+
+| Característica | Descripción |
+|----------------|-------------|
+| **Hot Reload** | Actualizar modelo en producción sin downtime |
+| **Model Registry** | Versionado y promoción con aliases (MLflow) |
+| **Métricas Prometheus** | Monitoreo modelo y inferencia |
+| **Detección de Data Drift** | Alertas de valores fuera de rango |
+| **100% Containerizado** | Stack portable y reproducible |
+| **CI/CD Ready** | Pipeline con GitHub Actions |
+
 ---
 
-## Quick Start
+## Prerequisitos
 
-```bash
-# 1. Clonar e instalar
-git clone <repo-url> && cd meli_challenge
-make setup                    # o: pip install uv && uv sync
+Antes de comenzar, asegúrate de tener instalado:
 
-# 2. Configurar entorno
-cp .env.example .env
+| Herramienta | Versión | Instalación |
+|-------------|---------|-------------|
+| **Python** | 3.12+ | [python.org](https://python.org) |
+| **uv** | latest | `pip install uv` o `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **Docker** | 20.10+ | [docker.com](https://docker.com) |
+| **Docker Compose** | 2.0+ | Incluido con Docker Desktop |
+| **make** | - | Solo Linux/macOS/WSL (opcional en Windows) |
 
-# 3. Levantar servicios (PostgreSQL + MinIO + MLflow)
-make dev                      # o: docker compose up -d postgres minio minio-init mlflow
-
-# 4. Iniciar API
-make api                      # o: uv run uvicorn src.api.main:app --reload --port 8000
-
-# 5. Probar predicción
-make predict                  # o: curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d '{"CRIM":0.00632,"ZN":18.0,"INDUS":2.31,"CHAS":0,"NOX":0.538,"RM":6.575,"AGE":65.2,"DIS":4.09,"RAD":1,"TAX":296.0,"PTRATIO":15.3,"B":396.9,"LSTAT":4.98}'
-```
-
-**URLs disponibles:**
-- API: http://localhost:8000
-- API Docs (Swagger): http://localhost:8000/docs
-- MLflow UI: http://localhost:5000
-- MinIO Console: http://localhost:9001
+> **Windows:** Si no tienes `make`, puedes usar los comandos directos. Ver [Notas para Windows](#notas-para-windows).
 
 ---
 
 ## Tabla de Contenidos
 
-- [Quick Start](#quick-start)
+- [Prerequisitos](#prerequisitos)
+- [Notas para Windows](#notas-para-windows)
 - [Arquitectura](#arquitectura)
 - [Flujo MLOps Completo](#flujo-mlops-completo)
 - [Comandos](#comandos)
@@ -44,9 +46,59 @@ make predict                  # o: curl -X POST http://localhost:8000/predict -H
 - [Docker](#docker)
 - [Monitoreo](#monitoreo)
 - [CI/CD](#cicd)
+- [Troubleshooting](#troubleshooting)
 - [Decisiones Técnicas](#decisiones-técnicas)
 - [Estado Actual y Mejoras](#estado-actual-y-mejoras)
+- [Nota para Evaluadores](#nota-para-evaluadores)
 - [Uso de Herramientas AI](#uso-de-herramientas-ai)
+
+---
+
+## Notas para Windows
+
+Si estás usando Windows sin WSL, ten en cuenta lo siguiente:
+
+### make no está disponible
+
+El comando `make` no viene instalado por defecto en Windows. Tienes dos opciones:
+
+1. **Usar WSL2 (recomendado):** Instala [WSL2](https://docs.microsoft.com/en-us/windows/wsl/install) para tener un entorno Linux completo.
+
+2. **Usar comandos directos:** Consulta la tabla [Make vs Sin Make](#referencia-rápida-make-vs-sin-make) para los equivalentes.
+
+### El seed automático no funciona en Docker
+
+Cuando usas `docker compose` directamente en Windows (sin `make dev`), el modelo seed **no se carga automáticamente**. Debes ejecutarlo manualmente:
+
+```bash
+# Después de levantar la infraestructura
+docker compose up -d postgres minio minio-init mlflow
+
+# Esperar a que MLflow esté listo (~30 segundos) y luego:
+uv run python scripts/seed_mlflow.py
+```
+
+### Comandos esenciales sin make
+
+```bash
+# Instalar dependencias
+uv sync
+
+# Levantar infraestructura
+docker compose up -d postgres minio minio-init mlflow
+
+# Seed del modelo (manual)
+uv run python scripts/seed_mlflow.py
+
+# Iniciar API
+uv run uvicorn src.api.main:app --reload --port 8000
+
+# Entrenar modelo
+uv run python -m src.cli.main train
+
+# Promover modelo
+uv run python -m src.cli.main promote --version 2
+```
 
 ---
 
@@ -54,33 +106,33 @@ make predict                  # o: curl -X POST http://localhost:8000/predict -H
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              TRAINING PIPELINE                               │
+│                              TRAINING PIPELINE                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   HousingData.csv                                                           │
 │         │                                                                   │
 │         ▼                                                                   │
-│   ┌───────────┐    ┌──────────────────┐    ┌───────────────────┐           │
-│   │  Loader   │───▶│  Preprocessing   │───▶│   Model Training  │           │
-│   │           │    │  (v1/v2/v3)      │    │  (RF/GB/XGB/LR)   │           │
-│   └───────────┘    └──────────────────┘    └─────────┬─────────┘           │
+│   ┌───────────┐    ┌──────────────────┐    ┌───────────────────┐            │
+│   │  Loader   │───▶│  Preprocessing  │───▶│   Model Training  │            │
+│   │           │    │  (v1/v2/v3)      │    │  (RF/GB/XGB/LR)   │            │
+│   └───────────┘    └──────────────────┘    └─────────┬─────────┘            │
 │                                                      │                      │
-│                    ┌─────────────────────────────────┼─────────────────┐    │
-│                    │                                 ▼                 │    │
-│                    │  ┌─────────────────┐    ┌─────────────────┐      │    │
-│                    │  │ Artifact Bundle │    │     MLflow      │      │    │
-│                    │  │  model.joblib   │    │  Tracking Server│      │    │
-│                    │  │  preprocessor   │    │  Model Registry │      │    │
-│                    │  │  metadata.json  │    └─────────────────┘      │    │
-│                    │  └────────┬────────┘                             │    │
-│                    │           │                                      │    │
-└────────────────────┼───────────┼──────────────────────────────────────┼────┘
+│                    ┌─────────────────────────────────┼────────────────┐     │
+│                    │                                 ▼                │     │
+│                    │  ┌─────────────────┐    ┌─────────────────┐      │     │
+│                    │  │ Artifact Bundle │    │     MLflow      │      │     │
+│                    │  │  model.joblib   │    │  Tracking Server│      │     │
+│                    │  │  preprocessor   │    │  Model Registry │      │     │
+│                    │  │  metadata.json  │    └─────────────────┘      │     │
+│                    │  └────────┬────────┘                             │     │
+│                    │           │                                      │     │
+└────────────────────┼───────────┼──────────────────────────────────────┼─────┘
                      │           │                                      │
 ┌────────────────────┼───────────┼──────────────────────────────────────┼────┐
 │                    │           ▼               INFERENCE API          │    │
 ├────────────────────┼──────────────────────────────────────────────────┼────┤
 │                    │  ┌─────────────────────────────────────────┐     │    │
-│                    │  │              FastAPI                     │     │    │
+│                    │  │              FastAPI                    │     │    │
 │                    │  │  ┌──────────┐  ┌──────────┐  ┌────────┐ │     │    │
 │                    │  │  │ /predict │  │ /health  │  │/metrics│ │     │    │
 │                    │  │  └──────────┘  └──────────┘  └────────┘ │     │    │
@@ -108,7 +160,8 @@ meli_challenge/
 │   │   ├── train.py            # Entrenamiento
 │   │   ├── register.py         # Registro en MLflow
 │   │   ├── promote.py          # Promoción de modelos
-│   │   └── runs.py             # Listar experimentos
+│   │   ├── runs.py             # Listar experimentos
+│   │   └── info.py             # Información del modelo local
 │   │
 │   ├── models/                 # Modelos ML (Strategy Pattern)
 │   │   ├── base.py             # Clase base abstracta
@@ -119,7 +172,7 @@ meli_challenge/
 │   │
 │   ├── data/                   # Carga y preprocesamiento
 │   │   ├── loader.py           # Carga y validación
-│   │   └── preprocessing/      # Estrategias: v1_median, v2_knn, v3_iterative
+│   │   └── preprocessing/      # Estrategias: v1_median, v2_knn, v3_iterative, v4_robust_col
 │   │
 │   ├── experiments/            # Sistema de experimentación
 │   │   ├── runner.py           # Grid search desde YAML
@@ -129,6 +182,14 @@ meli_challenge/
 │   │   ├── bundle.py           # MLArtifactBundle (modelo + preprocesador)
 │   │   └── metadata.py         # Metadatos del modelo
 │   │
+│   ├── training/               # Orquestación de entrenamiento
+│   │   └── core.py             # Pipeline de entrenamiento
+│   │
+│   ├── utils/                  # Utilidades
+│   │   ├── hashing.py          # Hashing de artefactos
+│   │   └── mlflow_helpers.py   # Helpers para MLflow
+│   │
+│   ├── logging_config.py       # Configuración de logging estructurado
 │   └── config/settings.py      # Configuración centralizada
 │
 ├── data/HousingData.csv        # Dataset
@@ -148,37 +209,43 @@ meli_challenge/
 
 El sistema implementa un ciclo completo de MLOps:
 
+```mermaid
+flowchart LR
+    A[Train Model] --> B[Register in MLflow]
+    B --> C[Promote to Production]
+    C --> D[Hot Reload API]
+    D --> E[Serve Predictions]
+    E -.->|Monitoring & Feedback| A
 ```
-┌─────────┐    ┌──────────┐    ┌─────────┐    ┌──────────┐    ┌─────────┐
-│  TRAIN  │───▶│ REGISTER │───▶│ PROMOTE │───▶│  RELOAD  │───▶│  SERVE  │
-│  Model  │    │ (MLflow) │    │ (alias) │    │   API    │    │   New   │
-└─────────┘    └──────────┘    └─────────┘    └──────────┘    └─────────┘
-     │              │               │              │              │
-     ▼              ▼               ▼              ▼              ▼
- Entrena y     Versiona el     Asigna alias   Recarga sin    Predicciones
- evalúa con    modelo en el    "production"   reiniciar      con modelo
- CV opcional   Model Registry  al modelo      la API         actualizado
-```
+
+| Etapa | Comando | Descripción |
+|-------|---------|-------------|
+| **Train** | `make train` | Entrena y evalúa con CV opcional |
+| **Register** | `make register RUN_ID=xxx` | Versiona en Model Registry |
+| **Promote** | `make promote VERSION=x` | Asigna alias "production" |
+| **Reload** | `curl .../model/reload` | Recarga sin reiniciar API |
+| **Serve** | Automático | Predicciones con modelo actualizado |
 
 ### Demostración Práctica (Ciclo Completo)
 
 #### Paso 1: Setup inicial con modelo pre-cargado
 
 ```bash
-# Levantar infraestructura
-make dev
-
-# Cargar modelo seed (funciona out-of-the-box)
-make seed
-# → Registra modelo pre-entrenado como v1 con alias "production"
-
-# Iniciar API
-make api
+# Levantar todo el stack (infra + seed + API)
+make up
 
 # Verificar predicción
 make predict
 # { "prediction": 30.25, "model_version": "v1", ... }
 ```
+
+> **Windows (sin make):** Ejecutar manualmente:
+> ```bash
+> docker compose up -d postgres minio minio-init mlflow
+> # Esperar ~30s, luego:
+> uv run python scripts/seed_mlflow.py
+> docker compose up -d api
+> ```
 
 #### Paso 2: Reentrenamiento con flujo interactivo
 
@@ -242,6 +309,7 @@ make predict
 | Registrar modelo | `make register RUN_ID=xxx` | `uv run python -m src.cli.main register <run_id>` |
 | Listar versiones | `make models` | `uv run python -m src.cli.main promote --list` |
 | Promover versión | `make promote VERSION=2` | `uv run python -m src.cli.main promote --version 2` |
+| Info del modelo local | `make info` | `uv run python -m src.cli.main info` |
 | **API** | | |
 | Iniciar API (dev) | `make api` | `uv run uvicorn src.api.main:app --reload --port 8000` |
 | Predicción de prueba | `make predict` | `curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -H "X-API-Key: dev-api-key" -d '{"CRIM":0.00632,...}'` |
@@ -273,7 +341,7 @@ make help
 El comando `make train` inicia un asistente interactivo que guía la selección de:
 
 1. **Tipo de modelo** - Random Forest, Gradient Boosting, XGBoost, Linear Regression
-2. **Estrategia de preprocesamiento** - v1_median, v2_knn, v3_iterative
+2. **Estrategia de preprocesamiento** - v1_median, v2_knn, v3_iterative, v4_robust_col
 3. **Cross-validation** - Opcional, con número de splits configurable
 4. **Registro en MLflow** - Opcional
 
@@ -289,7 +357,7 @@ El asistente guía paso a paso:
 
 ```
 1. Seleccionar modelo → random_forest, gradient_boost, xgboost, linear
-2. Seleccionar preprocesamiento → v1_median, v2_knn, v3_iterative
+2. Seleccionar preprocesamiento → v1_median, v2_knn, v3_iterative, v4_robust_col
 3. ¿Configurar hiperparámetros? → Personalizar n_estimators, max_depth, etc.
 4. ¿Habilitar cross-validation? → 5-fold CV por defecto
 5. Entrenamiento y evaluación
@@ -523,10 +591,13 @@ make clean        # Detiene y elimina volúmenes
 
 ### Variables de Entorno
 
-Crear archivo `.env` desde `.env.example`:
+El archivo `.env` es **opcional**. Docker Compose usa valores por defecto que funcionan out-of-the-box para desarrollo.
+
+Si deseas personalizar la configuración:
 
 ```bash
 cp .env.example .env
+# Editar .env según necesidades
 ```
 
 | Variable | Descripción | Default |
@@ -585,7 +656,7 @@ Pipeline automatizado con GitHub Actions:
 
 ```
 ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  lint   │───▶│  test   │───▶│  build  │
+│  lint   │──▶│  test   │───▶│  build  │
 │ (ruff)  │    │(pytest) │    │(docker) │
 └─────────┘    └─────────┘    └─────────┘
 ```
@@ -603,20 +674,45 @@ make ci
 
 ---
 
+## Troubleshooting
+
+| Problema | Causa | Solución |
+|----------|-------|----------|
+| MLflow no inicia | Contenedor iniciando | Esperar 30-60s, verificar con `docker logs mlflow-server` |
+| API error "Model not found" | Modelo no registrado | Ejecutar `make seed` o `uv run python scripts/seed_mlflow.py` |
+| Puerto en uso | Conflicto de puertos | Cambiar `API_PORT` o `MLFLOW_PORT` en `.env` |
+| "Connection refused" en MLflow | Servicios no iniciados | Verificar `docker compose ps`, reiniciar con `make up` |
+| Predicción devuelve error 422 | Datos inválidos | Verificar que todos los 13 features estén presentes |
+
+**Verificar estado de servicios:**
+```bash
+docker compose ps                    # Estado de contenedores
+docker logs mlflow-server            # Logs de MLflow
+curl http://localhost:8000/health    # Health check de API
+curl http://localhost:5000/health    # Health check de MLflow
+```
+
+---
+
 ## Decisiones Técnicas
 
 ### Stack Tecnológico
 
 | Componente | Tecnología | Justificación |
 |------------|------------|---------------|
-| API Framework | FastAPI | Async, validación Pydantic, docs automáticas |
-| ML Framework | scikit-learn | Madurez, pipelines reproducibles |
+| API Framework | FastAPI + Pydantic | Async, validación automática, docs OpenAPI |
+| ML Framework | scikit-learn + XGBoost | Madurez, pipelines reproducibles, gradient boosting |
 | Experiment Tracking | MLflow | Estándar de industria, Model Registry |
-| Containerización | Docker | Portabilidad, reproducibilidad |
+| Métricas | Prometheus Client | Observabilidad, integración con Grafana |
+| Logging | structlog | Logging estructurado (JSON), debugging en prod |
+| Configuración | OmegaConf | Config YAML tipada para experimentos |
+| Containerización | Docker + Compose | Portabilidad, orquestación local |
 | Package Manager | uv | Velocidad, lockfile determinístico |
 | CLI | Typer + Rich | Autocompletado, output formateado |
 | DB (MLflow) | PostgreSQL | Robustez, producción-ready |
 | Artifacts Storage | MinIO | S3-compatible, self-hosted |
+| Testing | pytest + pytest-cov | Tests unitarios, cobertura |
+| Linting | Ruff | Linter rápido, formateador integrado |
 
 ### Patrones de Diseño
 
@@ -633,48 +729,53 @@ make ci
 | `v1_median` | SimpleImputer(median) + StandardScaler | Baseline |
 | `v2_knn` | KNNImputer + StandardScaler | Missing values correlacionados |
 | `v3_iterative` | IterativeImputer + StandardScaler | Patrones complejos |
+| `v4_robust_col` | ColumnTransformer + RobustScaler | Datos con outliers |
 
 ---
 
-## Estado Actual y Mejoras
+## Roadmap y Mejoras Futuras
 
-### Implementado
+### Próximos pasos
 
-- [x] Pipeline de entrenamiento reproducible
-- [x] API REST con FastAPI (/predict, /predict/batch)
-- [x] MLflow Tracking + Model Registry
-- [x] Múltiples modelos (RF, GB, XGB, Linear)
-- [x] Múltiples preprocesadores (v1, v2, v3)
-- [x] Cross-validation integrado
-- [x] Hot reload de modelo sin downtime
-- [x] Monitoreo con Prometheus
-- [x] Detección de anomalías (data drift básico)
-- [x] CI/CD con GitHub Actions
-- [x] Docker Compose con PostgreSQL + MinIO
-- [x] CLI completo (train, runs, register, promote)
-- [x] Autenticación API Key opcional
+| Mejora | Descripción | Justificación |
+|--------|-------------|---------------|
+| **Versionado de Datos (DVC)** | Control de versiones para datasets | Reproducibilidad completa de experimentos |
+| **Dashboard Grafana** | Visualización de métricas Prometheus | Monitoreo en tiempo real de latencia y errores |
+| **Detección de Drift** | Alertas con PSI/KS-test | Detectar cuándo el modelo necesita reentrenamiento |
+| **Explicabilidad (SHAP)** | Endpoint `/explain` con importancia de features | Transparencia en decisiones de crédito |
 
-### Mejoras Futuras
+### Evolución del sistema
 
-| Mejora | Prioridad | Descripción |
-|--------|-----------|-------------|
-| Reentrenamiento automático | Media | Scheduler para entrenar periódicamente |
-| Dashboard Grafana | Baja | Visualización de métricas Prometheus |
-| Rate limiting | Media | Protección contra abuso de API |
-| A/B testing | Baja | Comparar modelos en producción |
-| Feature store | Baja | Consistencia train/serve |
-| SHAP values | Baja | Explicabilidad de predicciones |
+| Mejora | Descripción |
+|--------|-------------|
+| **Validación de Datos (Great Expectations)** | Rechazar datos corruptos antes del modelo |
+| **Continuous Training** | Triggers automáticos por degradación de métricas |
+| **A/B Testing / Shadow Mode** | Validar modelos nuevos contra producción |
+| **Rate Limiting** | Protección contra abuso de API |
 
----
+### Consideraciones de Escalabilidad
 
-## Nota sobre Archivos Incluidos
-
-> **Para evaluación:** Los archivos `models/` y `seed/` están incluidos para que el proyecto funcione **out-of-the-box** sin necesidad de entrenar primero.
+> La arquitectura actual (Docker Compose + MinIO + PostgreSQL) está diseñada para facilitar la migración a:
+> - **Kubernetes** con HPA para manejo de picos de tráfico
+> - **AWS S3/GCP Storage** como reemplazo transparente de MinIO
 >
-> **En producción real**, estos archivos NO deberían versionarse:
-> - `mlflow.db` → PostgreSQL
-> - `mlruns/` → MinIO/S3
-> - `models/*.joblib` → MLflow Model Registry
+> **Para sistemas con múltiples modelos y tiempo real:**
+> - **Orquestadores (Airflow/Dagster)**: Gestión de pipelines complejos con dependencias, reintentos y linaje de datos
+> - **Feature Store (Feast)**: Capa centralizada para consistencia de features entre entrenamiento e inferencia en tiempo real
+
+---
+
+## Nota para Evaluadores
+
+> **Archivos incluidos intencionalmente:** Los directorios `models/` y `seed/` están versionados para que el proyecto funcione **out-of-the-box** sin configuración adicional.
+>
+> Esto permite:
+> - Ejecutar `make up` y tener predicciones funcionando inmediatamente
+> - Probar el flujo completo sin entrenar primero
+> - Evaluar la arquitectura sin dependencias externas
+>
+> **En producción real**, estos artefactos NO se versionarían:
+
 
 ---
 
