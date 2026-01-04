@@ -2,7 +2,7 @@
 
 This module uses the preprocessing cache system which:
 1. Checks if preprocessed data exists locally
-2. If not, tries to pull from DVC remote (MinIO)
+2. If not, tries to pull from S3 (MinIO)
 3. If not in remote, creates and pushes to remote
 
 This ensures preprocessed data is computed only once and shared across runs.
@@ -65,7 +65,7 @@ def train_model(
     This is the core training function used by both the CLI and experiment runner.
     It uses the preprocessing cache system to avoid redundant computation:
     - If cache exists locally, uses it
-    - If not, tries to pull from DVC remote (MinIO)
+    - If not, tries to pull from S3 (MinIO)
     - If not in remote, computes and pushes to remote
 
     Args:

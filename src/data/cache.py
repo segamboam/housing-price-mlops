@@ -32,7 +32,7 @@ class ProcessedDataCache:
 
     CACHE_DIR = Path("data/processed")
     RAW_DATA_PATH = Path("data/HousingData.csv")
-    S3_BUCKET = "dvc-artifacts"
+    S3_BUCKET = "data-cache"
     S3_PREFIX = "processed-cache"
 
     REQUIRED_FILES = [
@@ -188,7 +188,7 @@ class ProcessedDataCache:
 
         This is the main entry point. It:
         1. Checks local cache
-        2. If not found, tries to pull from DVC remote
+        2. If not found, tries to pull from S3 (MinIO)
         3. If not in remote, creates the cache and pushes
 
         Args:

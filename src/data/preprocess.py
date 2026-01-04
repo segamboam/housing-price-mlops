@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Standalone preprocessing script for DVC pipeline.
+"""Standalone preprocessing script.
 
 This script preprocesses raw data and saves it to disk for reuse.
 Each preprocessing version creates a separate dataset that can be

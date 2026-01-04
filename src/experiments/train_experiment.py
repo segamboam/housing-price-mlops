@@ -1,7 +1,7 @@
 """Single experiment training function.
 
 Uses the preprocessing cache system - each preprocessing version is computed
-only once and stored in MinIO via DVC. Subsequent experiments with the same
+only once and stored in MinIO (S3). Subsequent experiments with the same
 preprocessing will use the cached data.
 """
 
@@ -20,7 +20,7 @@ def train_single_experiment(
     Uses the preprocessing cache system:
     - First experiment with a preprocessing version computes and caches data
     - Subsequent experiments reuse the cached preprocessed data
-    - All cached data is stored in MinIO via DVC
+    - All cached data is stored in MinIO (S3)
 
     Args:
         config: Experiment configuration.

@@ -14,13 +14,8 @@ wheels/
 
 .env
 
-# DVC cache (data stored in MinIO remote)
-.dvc/cache/
-.dvc/tmp/
-.dvc/config.local
-
-# DVC processed data (local MinIO, not shared)
-# Both data and .dvc files are ignored since MinIO is ephemeral
+# Preprocessed data cache (synced with MinIO automatically)
+# Regenerated on-demand if not present locally
 data/processed/
 
 # MLflow local data (legacy - now using PostgreSQL + MinIO)
