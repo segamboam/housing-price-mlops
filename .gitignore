@@ -19,11 +19,9 @@ wheels/
 .dvc/tmp/
 .dvc/config.local
 
-# DVC processed data (tracked by DVC, stored in MinIO)
-# The .dvc files must be in Git, but the actual data is in MinIO
-data/processed/*
-!data/processed/.gitignore
-!data/processed/*.dvc
+# DVC processed data (local MinIO, not shared)
+# Both data and .dvc files are ignored since MinIO is ephemeral
+data/processed/
 
 # MLflow local data (legacy - now using PostgreSQL + MinIO)
 # These files are kept as backup but no longer used in the new architecture

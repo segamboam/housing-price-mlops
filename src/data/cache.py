@@ -1,35 +1,48 @@
-"""Preprocessing cache manager with DVC integration.
+"""Preprocessing cache manager with S3 (MinIO) integration.
 
 This module provides transparent caching for preprocessed data.
 When training or running experiments:
 1. Check if cache exists locally
-2. If not, try to pull from DVC remote (MinIO)
+2. If not, try to pull from S3 (MinIO)
 3. If not in remote, compute and push to remote
 
 This ensures:
 - Preprocessed data is computed only once per strategy
-- All data is versioned and stored in S3 (MinIO)
+- All data is stored in S3 (MinIO) for persistence across sessions
 - Both `make train` and `make experiment` use the same cache
 """
 
 import json
-import subprocess
+import os
 import sys
 from pathlib import Path
 
+import boto3
 import joblib
 import numpy as np
 import pandas as pd
+from botocore.exceptions import ClientError
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 class ProcessedDataCache:
-    """Manages preprocessed data cache with DVC synchronization."""
+    """Manages preprocessed data cache with S3 (MinIO) synchronization."""
 
     CACHE_DIR = Path("data/processed")
     RAW_DATA_PATH = Path("data/HousingData.csv")
+    S3_BUCKET = "dvc-artifacts"
+    S3_PREFIX = "processed-cache"
+
+    REQUIRED_FILES = [
+        "train_X.parquet",
+        "train_y.parquet",
+        "test_X.parquet",
+        "test_y.parquet",
+        "preprocessor.joblib",
+        "metadata.json",
+    ]
 
     def __init__(self, preprocessing_version: str):
         """Initialize cache for a specific preprocessing version.
@@ -39,54 +52,63 @@ class ProcessedDataCache:
         """
         self.preprocessing_version = preprocessing_version
         self.cache_path = self.CACHE_DIR / preprocessing_version
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client configured for MinIO."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client(
+                "s3",
+                endpoint_url=os.environ.get("MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000"),
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin123"),
+            )
+        return self._s3_client
+
+    def _s3_key(self, filename: str) -> str:
+        """Get S3 key for a file."""
+        return f"{self.S3_PREFIX}/{self.preprocessing_version}/{filename}"
 
     def exists_locally(self) -> bool:
         """Check if processed data exists locally."""
-        required_files = [
-            "train_X.parquet",
-            "train_y.parquet",
-            "test_X.parquet",
-            "test_y.parquet",
-            "preprocessor.joblib",
-            "metadata.json",
-        ]
-        return all((self.cache_path / f).exists() for f in required_files)
+        return all((self.cache_path / f).exists() for f in self.REQUIRED_FILES)
 
-    def _run_dvc_command(self, args: list[str], check: bool = False) -> subprocess.CompletedProcess:
-        """Run a DVC command."""
-        cmd = ["uv", "run", "dvc"] + args
-        return subprocess.run(cmd, capture_output=True, text=True, check=check)
+    def exists_in_s3(self) -> bool:
+        """Check if processed data exists in S3 (MinIO)."""
+        try:
+            # Just check if metadata.json exists as a proxy
+            self.s3_client.head_object(Bucket=self.S3_BUCKET, Key=self._s3_key("metadata.json"))
+            return True
+        except ClientError:
+            return False
 
     def try_pull_from_remote(self) -> bool:
-        """Try to pull cached data from DVC remote.
-
-        This uses dvc pull with the cache path. It works when:
-        - The data was previously pushed with `dvc push`
-        - DVC is tracking the files (via dvc.yaml outs or dvc add)
+        """Try to pull cached data from S3 (MinIO).
 
         Returns:
             True if pull was successful and cache now exists locally.
         """
-        # First check if there's a dvc.lock that might have our data
-        print(f"  Checking DVC remote for {self.preprocessing_version}...")
-        
-        # Try to pull the specific path
-        result = self._run_dvc_command(["pull", str(self.cache_path), "-f"], check=False)
+        try:
+            if not self.exists_in_s3():
+                return False
 
-        if result.returncode == 0 and self.exists_locally():
-            print(f"  ✓ Pulled from remote: {self.preprocessing_version}")
+            print(f"  Pulling {self.preprocessing_version} from MinIO...")
+            self.cache_path.mkdir(parents=True, exist_ok=True)
+
+            for filename in self.REQUIRED_FILES:
+                local_path = self.cache_path / filename
+                self.s3_client.download_file(self.S3_BUCKET, self._s3_key(filename), str(local_path))
+
+            print(f"  ✓ Pulled from MinIO: {self.preprocessing_version}")
             return True
 
-        # Also try general pull in case dvc.lock has the reference
-        result = self._run_dvc_command(["pull"], check=False)
-        if self.exists_locally():
-            print(f"  ✓ Pulled from remote: {self.preprocessing_version}")
-            return True
-
-        return False
+        except ClientError as e:
+            print(f"  ⚠ Could not pull from MinIO: {e}")
+            return False
 
     def push_to_remote(self) -> bool:
-        """Push cached data to DVC remote.
+        """Push cached data to S3 (MinIO).
 
         Returns:
             True if push was successful.
@@ -95,15 +117,18 @@ class ProcessedDataCache:
             return False
 
         print(f"  Pushing {self.preprocessing_version} to MinIO...")
-        result = self._run_dvc_command(["push", str(self.cache_path)], check=False)
 
-        if result.returncode == 0:
-            print(f"  ✓ Pushed to remote: {self.preprocessing_version}")
+        try:
+            for filename in self.REQUIRED_FILES:
+                local_path = self.cache_path / filename
+                self.s3_client.upload_file(str(local_path), self.S3_BUCKET, self._s3_key(filename))
+
+            print(f"  ✓ Pushed to MinIO: {self.preprocessing_version}")
             return True
 
-        # Non-critical failure - data is still available locally
-        print(f"  ⚠ Could not push to remote (MinIO may be down)")
-        return False
+        except ClientError as e:
+            print(f"  ⚠ Could not push to MinIO: {e}")
+            return False
 
     def create_cache(
         self,
