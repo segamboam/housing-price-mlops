@@ -30,6 +30,12 @@ Desarrollé este proyecto con un enfoque de **desarrollo asistido por IA**, dond
 - Ajusté el sistema de guardado de modelo + preprocesador
 - Debuggeé y corregí código generado
 
+### Decisión DVC → boto3
+- Inicialmente implementé cache de datos preprocesados con DVC para sincronización con MinIO
+- Durante las pruebas, DVC requería archivos `.dvc` versionados en Git, lo cual no era ideal para un proyecto demo con MinIO efímero
+- Decidí simplificar usando boto3 directamente: el cache ahora sincroniza automáticamente con MinIO sin dependencias adicionales
+- Esta decisión redujo 68 paquetes de dependencias y simplificó el flujo
+
 ## Principios que Apliqué
 
 1. **Dirección propia**: Tomé las decisiones de arquitectura y diseño con criterio basado en mi experiencia

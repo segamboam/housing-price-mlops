@@ -172,6 +172,7 @@ meli_challenge/
 │   │
 │   ├── data/                   # Carga y preprocesamiento
 │   │   ├── loader.py           # Carga y validación
+│   │   ├── cache.py            # Cache de datos preprocesados (sync con MinIO)
 │   │   └── preprocessing/      # Estrategias: v1_median, v2_knn, v3_iterative, v4_robust_col
 │   │
 │   ├── experiments/            # Sistema de experimentación
@@ -414,6 +415,28 @@ settings:
 | **MAE** | Mean Absolute Error |
 | **R²** | Coeficiente de determinación |
 | **MAPE** | Mean Absolute Percentage Error |
+
+### Cache de Datos Preprocesados
+
+El sistema incluye un cache inteligente que evita recalcular el preprocesamiento:
+
+```
+get_or_create():
+  1. ¿Existe local?     → Usar cache local
+  2. ¿Existe en MinIO?  → Descargar de S3
+  3. No existe          → Crear + subir a MinIO
+```
+
+**Beneficios:**
+- Preprocesamiento calculado una sola vez por estrategia
+- Sincronización automática con MinIO (S3)
+- Acelera `make train` y `make experiment`
+
+**Comandos:**
+```bash
+make cache-status   # Ver versiones cacheadas
+make cache-clear    # Limpiar cache local (se re-descarga de MinIO)
+```
 
 ---
 
@@ -703,6 +726,7 @@ curl http://localhost:5000/health    # Health check de MLflow
 | API Framework | FastAPI + Pydantic | Async, validación automática, docs OpenAPI |
 | ML Framework | scikit-learn + XGBoost | Madurez, pipelines reproducibles, gradient boosting |
 | Experiment Tracking | MLflow | Estándar de industria, Model Registry |
+| Data Cache | boto3 + MinIO | Cache de preprocesamiento con sync S3 automático |
 | Métricas | Prometheus Client | Observabilidad, integración con Grafana |
 | Logging | structlog | Logging estructurado (JSON), debugging en prod |
 | Configuración | OmegaConf | Config YAML tipada para experimentos |
@@ -739,7 +763,6 @@ curl http://localhost:5000/health    # Health check de MLflow
 
 | Mejora | Descripción | Justificación |
 |--------|-------------|---------------|
-| **Versionado de Datos (DVC)** | Control de versiones para datasets | Reproducibilidad completa de experimentos |
 | **Dashboard Grafana** | Visualización de métricas Prometheus | Monitoreo en tiempo real de latencia y errores |
 | **Detección de Drift** | Alertas con PSI/KS-test | Detectar cuándo el modelo necesita reentrenamiento |
 | **Explicabilidad (SHAP)** | Endpoint `/explain` con importancia de features | Transparencia en decisiones de crédito |
