@@ -98,7 +98,9 @@ class ProcessedDataCache:
 
             for filename in self.REQUIRED_FILES:
                 local_path = self.cache_path / filename
-                self.s3_client.download_file(self.S3_BUCKET, self._s3_key(filename), str(local_path))
+                self.s3_client.download_file(
+                    self.S3_BUCKET, self._s3_key(filename), str(local_path)
+                )
 
             print(f"  ✓ Pulled from MinIO: {self.preprocessing_version}")
             return True
@@ -202,7 +204,7 @@ class ProcessedDataCache:
 
         # 1. Check local cache
         if self.exists_locally():
-            print(f"  ✓ Using local cache")
+            print("  ✓ Using local cache")
             return self.load()
 
         # 2. Try to pull from remote
@@ -210,7 +212,7 @@ class ProcessedDataCache:
             return self.load()
 
         # 3. Create cache
-        print(f"  Cache not found, creating...")
+        print("  Cache not found, creating...")
         self.create_cache(test_size=test_size, random_state=random_state)
         return self.load()
 
@@ -232,4 +234,3 @@ def get_cached_data(
     """
     cache = ProcessedDataCache(preprocessing_version)
     return cache.get_or_create(test_size=test_size, random_state=random_state)
-

@@ -21,14 +21,13 @@ import src.models.strategies  # noqa: F401
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
 from src.data.cache import get_cached_data
-from src.data.loader import FEATURE_COLUMNS, TARGET_COLUMN
+from src.data.loader import FEATURE_COLUMNS
 from src.data.preprocessing.base import BasePreprocessor
 from src.data.preprocessing.factory import PreprocessorFactory
 from src.models.base import BaseModel
 from src.models.cross_validation import CVResult, perform_cross_validation
 from src.models.evaluate import evaluate_model
 from src.models.factory import ModelFactory
-from src.utils import compute_dataset_hash
 from src.utils.mlflow_helpers import initialize_mlflow
 
 
