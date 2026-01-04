@@ -34,7 +34,7 @@ MLFLOW_PORT := 5000
 .PHONY: help \
         install setup \
         train experiment \
-        runs register models promote \
+        runs register models promote info \
         api \
         up dev down logs clean \
         test lint ci \
@@ -59,6 +59,7 @@ help: ## Show this help message
 	@echo "  \033[36mregister\033[0m         Register a run as model version (RUN_ID=xxx)"
 	@echo "  \033[36mmodels\033[0m           List registered model versions and aliases"
 	@echo "  \033[36mpromote\033[0m          Promote model version to production (VERSION=x)"
+	@echo "  \033[36minfo\033[0m             Show current model information"
 	@echo ""
 	@echo "\033[1mAPI\033[0m"
 	@echo "  \033[36mapi\033[0m              Start API locally with hot-reload"
@@ -126,6 +127,9 @@ ifndef VERSION
 	@exit 1
 endif
 	$(CLI) promote --version $(VERSION)
+
+info: ## Show current model information
+	$(CLI) info
 
 #==============================================================================
 # API
