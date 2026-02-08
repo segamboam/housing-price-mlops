@@ -136,6 +136,10 @@ class PredictionResponse(BaseModel):
     model_type: str | None = Field(
         None, description="Tipo de modelo (random_forest, gradient_boost, etc.)"
     )
+    served_by: str = Field(
+        ...,
+        description="Alias del modelo que sirvió la predicción (champion/challenger)",
+    )
     warnings: list[str] = Field(
         default_factory=list,
         description="Advertencias sobre datos de entrada (ej: valores fuera del rango de entrenamiento)",
@@ -148,6 +152,7 @@ class PredictionResponse(BaseModel):
                 "prediction_formatted": "$24,500",
                 "model_version": "abc123de",
                 "model_type": "random_forest",
+                "served_by": "champion",
                 "warnings": [],
             }
         }
@@ -158,9 +163,11 @@ class HealthResponse(BaseModel):
     """Output schema for health check endpoint."""
 
     status: str = Field(..., description="Service health status")
-    model_loaded: bool = Field(..., description="Whether model is loaded")
-    model_source: str | None = Field(
-        None, description="Source of loaded model (bundle/mlflow/local)"
+    model_loaded: bool = Field(..., description="Whether at least one model is loaded")
+    champion_loaded: bool = Field(..., description="Whether champion model is loaded")
+    challenger_loaded: bool = Field(..., description="Whether challenger model is loaded")
+    traffic_split: dict[str, float] = Field(
+        ..., description="Current traffic split (e.g. {'champion': 0.5, 'challenger': 0.5})"
     )
 
 
@@ -325,6 +332,10 @@ class BatchPredictionResponse(BaseModel):
     predictions: list[BatchPredictionItem] = Field(..., description="Lista de predicciones")
     model_version: str = Field(..., description="Versión del modelo utilizado")
     model_type: str | None = Field(None, description="Tipo de modelo")
+    served_by: str = Field(
+        ...,
+        description="Alias del modelo que sirvió el batch (champion/challenger)",
+    )
     total_items: int = Field(..., description="Total de items procesados")
     processing_time_ms: float = Field(..., description="Tiempo de procesamiento en milisegundos")
 
@@ -347,6 +358,7 @@ class BatchPredictionResponse(BaseModel):
                 ],
                 "model_version": "abc123de",
                 "model_type": "random_forest",
+                "served_by": "champion",
                 "total_items": 2,
                 "processing_time_ms": 45.2,
             }
@@ -360,8 +372,8 @@ class ModelReloadRequest(BaseModel):
 
     alias: str | None = Field(
         None,
-        description="Alias de MLflow a cargar. Usa 'production' por defecto si no se especifica.",
-        json_schema_extra={"example": "production"},
+        description="Alias a recargar: 'champion', 'challenger', o null para recargar ambos.",
+        json_schema_extra={"example": "champion"},
     )
 
 
@@ -369,11 +381,11 @@ class ModelReloadResponse(BaseModel):
     """Response del endpoint de recarga de modelo."""
 
     status: str = Field(..., description="Estado de la operación ('success' o 'failed')")
-    previous_model: dict | None = Field(
-        None, description="Info del modelo anterior antes de la recarga"
+    champion_model: dict | None = Field(
+        None, description="Info del modelo champion después de la recarga"
     )
-    current_model: dict | None = Field(
-        None, description="Info del modelo actual después de la recarga"
+    challenger_model: dict | None = Field(
+        None, description="Info del modelo challenger después de la recarga"
     )
     message: str = Field(..., description="Mensaje descriptivo de la operación")
     reload_time_ms: float = Field(..., description="Tiempo de recarga en milisegundos")
@@ -382,18 +394,44 @@ class ModelReloadResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "status": "success",
-                "previous_model": {
+                "champion_model": {
                     "artifact_id": "abc12345",
                     "model_type": "random_forest",
                     "source": "mlflow",
                 },
-                "current_model": {
+                "challenger_model": {
                     "artifact_id": "def67890",
                     "model_type": "gradient_boost",
                     "source": "mlflow",
                 },
-                "message": "Modelo recargado exitosamente desde MLflow (production)",
+                "message": "Modelos recargados exitosamente desde MLflow",
                 "reload_time_ms": 1523.45,
             }
         }
     }
+
+
+# Traffic Configuration Schemas
+class TrafficConfigRequest(BaseModel):
+    """Request para configurar el split de tráfico champion/challenger."""
+
+    champion_weight: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Peso del champion (0.0 - 1.0). El challenger recibe 1 - champion_weight.",
+        json_schema_extra={"example": 0.5},
+    )
+
+
+class TrafficConfigResponse(BaseModel):
+    """Response con la configuración actual del split de tráfico."""
+
+    champion_weight: float = Field(..., description="Peso actual del champion (0.0 - 1.0)")
+    challenger_weight: float = Field(..., description="Peso actual del challenger (0.0 - 1.0)")
+    champion_loaded: bool = Field(..., description="Si el champion está cargado")
+    challenger_loaded: bool = Field(..., description="Si el challenger está cargado")
+    effective_split: dict[str, float] = Field(
+        ...,
+        description="Split efectivo considerando modelos disponibles",
+    )

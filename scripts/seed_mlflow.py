@@ -43,16 +43,16 @@ def seed_mlflow() -> None:
         print("Make sure Docker infrastructure is running: make infra-up")
         sys.exit(1)
 
-    # Check if model already exists with production alias
+    # Check if model already exists with champion alias
     try:
         model_version = client.get_model_version_by_alias(
-            name=settings.mlflow_model_name, alias="production"
+            name=settings.mlflow_model_name, alias="champion"
         )
-        print(f"\nModel already seeded! Production alias points to version {model_version.version}")
+        print(f"\nModel already seeded! Champion alias points to version {model_version.version}")
         print("Skipping seed (use --force to re-seed)")
         sys.exit(0)
     except mlflow.exceptions.MlflowException:
-        # No production alias exists, proceed with seeding
+        # No champion alias exists, proceed with seeding
         pass
 
     # Check if seed bundle exists
@@ -146,8 +146,8 @@ def seed_mlflow() -> None:
         run_id = run.info.run_id
         print(f"  Run ID: {run_id[:8]}...")
 
-    # Set production alias and add model version metadata
-    print("\nSetting production alias and metadata...")
+    # Set champion + challenger aliases and add model version metadata
+    print("\nSetting champion/challenger aliases and metadata...")
     try:
         # Get the latest version
         versions = client.search_model_versions(f"name='{settings.mlflow_model_name}'")
@@ -169,13 +169,21 @@ def seed_mlflow() -> None:
                 source="seed",
             )
 
-            # Set production alias
+            # Set champion alias
             client.set_registered_model_alias(
                 name=settings.mlflow_model_name,
-                alias="production",
+                alias="champion",
                 version=version_num,
             )
-            print(f"  Set 'production' alias to version {version_num}")
+            print(f"  Set 'champion' alias to version {version_num}")
+
+            # Set challenger alias (same version for demo 50/50 from start)
+            client.set_registered_model_alias(
+                name=settings.mlflow_model_name,
+                alias="challenger",
+                version=version_num,
+            )
+            print(f"  Set 'challenger' alias to version {version_num}")
             print(f"  Added description and tags to version {version_num}")
     except Exception as e:
         print(f"  Warning: Could not set alias/metadata: {e}")

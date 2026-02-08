@@ -1,32 +1,40 @@
-"""FastAPI application for housing price prediction."""
+"""FastAPI application for housing price prediction.
+
+Implements blue-green (champion/challenger) model serving with
+configurable traffic splitting and hot-reload from MLflow.
+"""
 
 import asyncio
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 
 from src.api.dependencies import (
-    get_artifact_bundle,
+    get_challenger_bundle,
+    get_champion_bundle,
     get_model_source,
-    get_optional_bundle,
+    get_traffic_router,
 )
 from src.api.error_handlers import register_error_handlers
 from src.api.middleware import (
     PrometheusMiddleware,
     get_metrics,
     record_model_load,
+    record_traffic_selection,
 )
+from src.api.router import TrafficRouter
 from src.api.schemas import (
     BatchPredictionRequest,
     BatchPredictionResponse,
     ErrorResponse,
     HealthResponse,
     HousingFeatures,
-    ModelInfoResponse,
     ModelReloadRequest,
     ModelReloadResponse,
     PredictionResponse,
+    TrafficConfigRequest,
+    TrafficConfigResponse,
 )
 from src.api.security import verify_api_key
 from src.api.service import PredictionService
@@ -81,7 +89,7 @@ def load_bundle_from_mlflow(
     from the MLflow run associated with the specified model alias.
 
     Args:
-        alias: MLflow model alias to load. Uses settings default if None.
+        alias: MLflow model alias to load. Uses champion alias if None.
 
     Returns:
         Tuple of (artifact_bundle, source_string) or (None, None) on failure.
@@ -91,7 +99,7 @@ def load_bundle_from_mlflow(
     import mlflow
     from mlflow import MlflowClient
 
-    effective_alias = alias or settings.mlflow_model_alias
+    effective_alias = alias or settings.mlflow_champion_alias
 
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     client = MlflowClient()
@@ -125,6 +133,16 @@ def load_bundle_from_mlflow(
         return None, None
 
 
+def _bundle_info(bundle: MLArtifactBundle | None) -> dict | None:
+    """Extract summary info from a bundle for API responses."""
+    if bundle is None:
+        return None
+    return {
+        "artifact_id": bundle.metadata.artifact_id[:8],
+        "model_type": bundle.metadata.model_type,
+    }
+
+
 # ------------------------------------------------------------------
 # Lifespan
 # ------------------------------------------------------------------
@@ -132,34 +150,58 @@ def load_bundle_from_mlflow(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model on startup.
+    """Load champion and challenger models on startup.
 
-    Priority order:
-    1. MLflow Registry (production alias) - downloads complete artifact bundle
+    Priority order for champion:
+    1. MLflow Registry (champion alias) - downloads complete artifact bundle
     2. Local artifact bundle (fallback)
+
+    Challenger is loaded only from MLflow (optional, no fallback).
 
     State is stored in ``app.state`` so it can be accessed through
     dependency injection instead of module-level globals.
     """
-    logger.info("Starting model load sequence")
+    logger.info("Starting model load sequence (champion/challenger)")
 
-    bundle: MLArtifactBundle | None = None
-    source: str | None = None
+    # -- Champion --
+    champion_bundle: MLArtifactBundle | None = None
+    champion_source: str | None = None
 
-    # Priority 1: Try MLflow Registry
     if settings.mlflow_tracking_uri:
-        bundle, source = load_bundle_from_mlflow()
+        champion_bundle, champion_source = load_bundle_from_mlflow(settings.mlflow_champion_alias)
 
-    # Priority 2: Fallback to local artifact bundle
-    if bundle is None:
-        bundle, source = load_artifact_bundle()
+    # Fallback to local artifact bundle for champion
+    if champion_bundle is None:
+        champion_bundle, champion_source = load_artifact_bundle()
 
-    if bundle is None:
-        logger.warning("No model available for predictions")
+    if champion_bundle is None:
+        logger.warning("No champion model available for predictions")
+
+    # -- Challenger --
+    challenger_bundle: MLArtifactBundle | None = None
+    challenger_source: str | None = None
+
+    if settings.mlflow_tracking_uri:
+        challenger_bundle, challenger_source = load_bundle_from_mlflow(
+            settings.mlflow_challenger_alias
+        )
+
+    if challenger_bundle is None:
+        logger.info("No challenger model loaded (will route 100%% to champion)")
 
     # Store in app.state for dependency injection
-    app.state.artifact_bundle = bundle
-    app.state.model_source = source
+    app.state.champion_bundle = champion_bundle
+    app.state.champion_source = champion_source
+    app.state.challenger_bundle = challenger_bundle
+    app.state.challenger_source = challenger_source
+    app.state.champion_weight = settings.champion_traffic_weight
+
+    logger.info(
+        "Model load complete",
+        champion=champion_bundle is not None,
+        challenger=challenger_bundle is not None,
+        champion_weight=settings.champion_traffic_weight,
+    )
 
     yield
 
@@ -179,13 +221,17 @@ API para predecir precios de viviendas basándose en características del inmueb
 - **Algoritmo**: Configurable (RandomForest, GradientBoost, XGBoost, Linear)
 - **Features**: 13 características (CRIM, ZN, INDUS, CHAS, NOX, RM, AGE, DIS, RAD, TAX, PTRATIO, B, LSTAT)
 - **Target**: MEDV (valor mediano en $1000s)
+- **Serving**: Blue-green con champion/challenger y traffic split configurable
 
 ### Autenticación
 El endpoint `/predict` requiere API Key en el header `X-API-Key` si está configurada.
 
 ### Endpoints Principales
-- `POST /predict` - Predicción individual de precio
-- `GET /model/info` - Información del modelo activo
+- `POST /predict` - Predicción individual de precio (routed por traffic split)
+- `GET /model/info` - Información del modelo activo (champion + challenger)
+- `GET /model/traffic` - Configuración actual del traffic split
+- `POST /model/traffic` - Cambiar traffic split en runtime
+- `POST /model/reload` - Recargar modelos desde MLflow
 - `GET /health` - Estado del servicio
 - `GET /metrics` - Métricas Prometheus
 
@@ -224,13 +270,13 @@ if settings.metrics_enabled:
 
 
 # ------------------------------------------------------------------
-# Helper: build a PredictionService from current app state
+# Helper: build a PredictionService from a bundle + alias
 # ------------------------------------------------------------------
 
 
-def _build_service(bundle: MLArtifactBundle) -> PredictionService:
+def _build_service(bundle: MLArtifactBundle, model_alias: str = "champion") -> PredictionService:
     """Create a PredictionService from an artifact bundle."""
-    return PredictionService(bundle=bundle, settings=settings)
+    return PredictionService(bundle=bundle, settings=settings, model_alias=model_alias)
 
 
 # ------------------------------------------------------------------
@@ -246,19 +292,29 @@ async def root():
         "version": settings.api_version,
         "description": "Predict median house values in Boston area",
         "auth_required": settings.api_key_required,
+        "serving_strategy": "champion/challenger",
     }
+
+
+def _get_optional_champion(request: Request) -> MLArtifactBundle | None:
+    """Get champion bundle without raising (for health checks)."""
+    return getattr(request.app.state, "champion_bundle", None)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 async def health_check(
-    bundle: MLArtifactBundle | None = Depends(get_optional_bundle),
-    model_source: str | None = Depends(get_model_source),
+    champion: MLArtifactBundle | None = Depends(_get_optional_champion),
+    challenger: MLArtifactBundle | None = Depends(get_challenger_bundle),
 ):
-    """Check API health status."""
+    """Check API health status including champion/challenger model state."""
+    weight = getattr(app.state, "champion_weight", settings.champion_traffic_weight)
+    router = TrafficRouter(champion, challenger, weight)
     return HealthResponse(
         status="healthy",
-        model_loaded=bundle is not None,
-        model_source=model_source,
+        model_loaded=champion is not None or challenger is not None,
+        champion_loaded=champion is not None,
+        challenger_loaded=challenger is not None,
+        traffic_split=router.effective_split,
     )
 
 
@@ -270,20 +326,29 @@ async def metrics():
 
 @app.get(
     "/model/info",
-    response_model=ModelInfoResponse,
     responses={503: {"model": ErrorResponse}},
     tags=["model"],
 )
 async def model_info(
-    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
-    model_source: str | None = Depends(get_model_source),
+    champion: MLArtifactBundle = Depends(get_champion_bundle),
+    challenger: MLArtifactBundle | None = Depends(get_challenger_bundle),
+    champion_source: str | None = Depends(get_model_source),
 ):
-    """Obtener información detallada del modelo activo.
+    """Obtener información detallada de los modelos activos (champion + challenger)."""
+    champion_service = _build_service(champion, "champion")
+    result: dict = {
+        "champion": champion_service.get_model_info(champion_source).model_dump(),
+    }
+    if challenger is not None:
+        challenger_source = getattr(app.state, "challenger_source", None)
+        challenger_service = _build_service(challenger, "challenger")
+        result["challenger"] = challenger_service.get_model_info(challenger_source).model_dump()
+    else:
+        result["challenger"] = None
 
-    Incluye métricas, feature importance, y metadata de MLflow.
-    """
-    service = _build_service(bundle)
-    return service.get_model_info(model_source)
+    weight = getattr(app.state, "champion_weight", 0.5)
+    result["traffic_split"] = TrafficRouter(champion, challenger, weight).effective_split
+    return result
 
 
 @app.post(
@@ -297,15 +362,20 @@ async def model_info(
 )
 async def predict(
     features: HousingFeatures,
-    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
+    router: TrafficRouter = Depends(get_traffic_router),
     api_key: str | None = Depends(verify_api_key),
 ):
     """Predict housing price based on features.
 
+    The request is routed to either the champion or challenger model
+    based on the configured traffic split.
+
     Requires API key authentication if API_KEY environment variable is set.
     Returns warnings if input features are outside training data ranges.
     """
-    service = _build_service(bundle)
+    bundle, alias = router.select()
+    record_traffic_selection(alias)
+    service = _build_service(bundle, alias)
     return service.predict(features)
 
 
@@ -320,20 +390,74 @@ async def predict(
 )
 async def predict_batch(
     request: BatchPredictionRequest,
-    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
+    router: TrafficRouter = Depends(get_traffic_router),
     api_key: str | None = Depends(verify_api_key),
 ):
     """Predicción en lote para múltiples sets de features.
 
-    Procesa múltiples predicciones eficientemente:
-    - Transforma todas las features de una vez
-    - Ejecuta predicción en batch
+    Todos los items del batch son servidos por el mismo modelo
+    (seleccionado una vez por el traffic router) para consistencia.
 
     Máximo 100 items por request.
     Retorna warnings por item para features fuera de rango.
     """
-    service = _build_service(bundle)
+    bundle, alias = router.select()
+    record_traffic_selection(alias)
+    service = _build_service(bundle, alias)
     return service.predict_batch(request.items)
+
+
+@app.get(
+    "/model/traffic",
+    response_model=TrafficConfigResponse,
+    tags=["model"],
+)
+async def get_traffic_config():
+    """Obtener la configuración actual del traffic split."""
+    champ = getattr(app.state, "champion_bundle", None)
+    chall = getattr(app.state, "challenger_bundle", None)
+    weight = getattr(app.state, "champion_weight", 0.5)
+    router = TrafficRouter(champ, chall, weight)
+    return TrafficConfigResponse(
+        champion_weight=weight,
+        challenger_weight=round(1.0 - weight, 4),
+        champion_loaded=champ is not None,
+        challenger_loaded=chall is not None,
+        effective_split=router.effective_split,
+    )
+
+
+@app.post(
+    "/model/traffic",
+    response_model=TrafficConfigResponse,
+    tags=["model"],
+)
+async def set_traffic_config(
+    config: TrafficConfigRequest,
+    api_key: str | None = Depends(verify_api_key),
+):
+    """Cambiar el traffic split en runtime sin reiniciar el servicio.
+
+    Requiere autenticación si está configurada.
+    """
+    app.state.champion_weight = config.champion_weight
+    champ = getattr(app.state, "champion_bundle", None)
+    chall = getattr(app.state, "challenger_bundle", None)
+    router = TrafficRouter(champ, chall, config.champion_weight)
+
+    logger.info(
+        "Traffic split updated",
+        champion_weight=config.champion_weight,
+        effective_split=router.effective_split,
+    )
+
+    return TrafficConfigResponse(
+        champion_weight=config.champion_weight,
+        challenger_weight=round(1.0 - config.champion_weight, 4),
+        champion_loaded=champ is not None,
+        challenger_loaded=chall is not None,
+        effective_split=router.effective_split,
+    )
 
 
 @app.post(
@@ -346,64 +470,56 @@ async def reload_model(
     request: ModelReloadRequest | None = None,
     api_key: str | None = Depends(verify_api_key),
 ):
-    """Recargar modelo desde MLflow sin reiniciar el servicio.
+    """Recargar modelos desde MLflow sin reiniciar el servicio.
 
-    Operación thread-safe que reemplaza el modelo atómicamente.
-    Opcionalmente especifica un alias para cargar una versión diferente.
+    Operación thread-safe que reemplaza modelos atómicamente.
+    - alias='champion': recarga solo el champion
+    - alias='challenger': recarga solo el challenger
+    - alias=null: recarga ambos
 
     Requiere autenticación si está configurada.
     """
     async with _reload_lock:
         start_time = time.perf_counter()
 
-        # Capture previous model info
-        current_bundle: MLArtifactBundle | None = getattr(
-            app.state, "artifact_bundle", None
-        )
-        current_source: str | None = getattr(app.state, "model_source", None)
-
-        previous_info = None
-        if current_bundle is not None:
-            previous_info = {
-                "artifact_id": current_bundle.metadata.artifact_id[:8],
-                "model_type": current_bundle.metadata.model_type,
-                "source": current_source,
-            }
-
-        # Determine alias to use
         alias = request.alias if request else None
-        effective_alias = alias or settings.mlflow_model_alias
+        reload_champion = alias in (None, "champion")
+        reload_challenger = alias in (None, "challenger")
 
-        # Attempt reload from MLflow
-        new_bundle, new_source = load_bundle_from_mlflow(alias)
+        messages = []
+
+        # -- Reload champion --
+        if reload_champion:
+            new_champion, new_source = load_bundle_from_mlflow(settings.mlflow_champion_alias)
+            if new_champion is not None:
+                app.state.champion_bundle = new_champion
+                app.state.champion_source = new_source
+                messages.append("champion recargado")
+                record_model_load("success", "mlflow_reload_champion")
+            else:
+                messages.append("champion: error al recargar (sin cambios)")
+                record_model_load("failure", "mlflow_reload_champion")
+
+        # -- Reload challenger --
+        if reload_challenger:
+            new_challenger, new_source = load_bundle_from_mlflow(settings.mlflow_challenger_alias)
+            if new_challenger is not None:
+                app.state.challenger_bundle = new_challenger
+                app.state.challenger_source = new_source
+                messages.append("challenger recargado")
+                record_model_load("success", "mlflow_reload_challenger")
+            else:
+                messages.append("challenger: error al recargar (sin cambios)")
+                record_model_load("failure", "mlflow_reload_challenger")
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
-        if new_bundle is None:
-            return ModelReloadResponse(
-                status="failed",
-                previous_model=previous_info,
-                current_model=previous_info,  # unchanged
-                message=f"Error al cargar modelo desde MLflow ({effective_alias})",
-                reload_time_ms=duration_ms,
-            )
-
-        # Atomic swap via app.state
-        app.state.artifact_bundle = new_bundle
-        app.state.model_source = new_source
-
-        current_info = {
-            "artifact_id": new_bundle.metadata.artifact_id[:8],
-            "model_type": new_bundle.metadata.model_type,
-            "source": new_source,
-        }
-
-        record_model_load("success", "mlflow_reload")
+        any_success = any("recargado" in m and "error" not in m for m in messages)
 
         return ModelReloadResponse(
-            status="success",
-            previous_model=previous_info,
-            current_model=current_info,
-            message=f"Modelo recargado exitosamente desde MLflow ({effective_alias})",
+            status="success" if any_success else "failed",
+            champion_model=_bundle_info(getattr(app.state, "champion_bundle", None)),
+            challenger_model=_bundle_info(getattr(app.state, "challenger_bundle", None)),
+            message="; ".join(messages),
             reload_time_ms=duration_ms,
         )

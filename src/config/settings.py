@@ -32,9 +32,13 @@ class Settings(BaseSettings):
     # MLflow Settings
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_model_name: str = "housing-price-model"
-    mlflow_model_alias: str = "production"
     mlflow_port: int = 5000
     mlflow_bucket_name: str = "mlflow-artifacts"
+
+    # Blue-Green / Champion-Challenger
+    mlflow_champion_alias: str = "champion"
+    mlflow_challenger_alias: str = "challenger"
+    champion_traffic_weight: float = 0.5  # 0.0 = all challenger, 1.0 = all champion
 
     # PostgreSQL Settings (MLflow backend store)
     postgres_user: str = "mlflow"

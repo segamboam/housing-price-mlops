@@ -35,6 +35,7 @@ class PredictionResult:
     formatted: str
     model_version: str
     model_type: str | None
+    served_by: str
     warnings: list[str] = field(default_factory=list)
 
 
@@ -47,11 +48,18 @@ class PredictionService:
     Args:
         bundle: The loaded ML artifact bundle (model + preprocessor).
         settings: Application settings.
+        model_alias: Which alias this bundle corresponds to (champion/challenger).
     """
 
-    def __init__(self, bundle: MLArtifactBundle, settings: Settings) -> None:
+    def __init__(
+        self,
+        bundle: MLArtifactBundle,
+        settings: Settings,
+        model_alias: str = "champion",
+    ) -> None:
         self._bundle = bundle
         self._settings = settings
+        self._model_alias = model_alias
 
     # ------------------------------------------------------------------
     # Public API
@@ -75,8 +83,8 @@ class PredictionService:
         model_version = self._bundle.metadata.artifact_id[:8]
 
         duration = time.perf_counter() - start_time
-        record_prediction(duration)
-        record_prediction_value(float(prediction))
+        record_prediction(duration, model_alias=self._model_alias)
+        record_prediction_value(float(prediction), model_alias=self._model_alias)
 
         prediction_value = round(float(prediction), 2)
         return PredictionResponse(
@@ -84,6 +92,7 @@ class PredictionService:
             prediction_formatted=self._format_price(prediction_value),
             model_version=model_version,
             model_type=self._bundle.metadata.model_type,
+            served_by=self._model_alias,
             warnings=warnings,
         )
 
@@ -120,15 +129,16 @@ class PredictionService:
                     warnings=warnings,
                 )
             )
-            record_prediction_value(float(pred))
+            record_prediction_value(float(pred), model_alias=self._model_alias)
 
         duration = time.perf_counter() - start_time
-        record_prediction(duration)
+        record_prediction(duration, model_alias=self._model_alias)
 
         return BatchPredictionResponse(
             predictions=prediction_items,
             model_version=model_version,
             model_type=model_type,
+            served_by=self._model_alias,
             total_items=len(items),
             processing_time_ms=duration * 1000,
         )

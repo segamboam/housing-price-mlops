@@ -39,6 +39,9 @@ def get_model_versions(client: MlflowClient, model_name: str) -> list[dict]:
         return []
 
 
+VALID_ALIASES = ("champion", "challenger")
+
+
 def promote(
     version: str = typer.Option(
         None,
@@ -47,10 +50,10 @@ def promote(
         help="Model version to promote",
     ),
     alias: str = typer.Option(
-        "production",
+        "champion",
         "--alias",
         "-a",
-        help="Alias to assign (default: production)",
+        help="Alias to assign: 'champion' (production) or 'challenger' (candidate for A/B test)",
     ),
     model_name: str = typer.Option(
         "housing-price-model",
@@ -70,7 +73,18 @@ def promote(
         help="List all model versions",
     ),
 ) -> None:
-    """Promote a model version to production (or other alias)."""
+    """Promote a model version to champion or challenger alias.
+
+    - champion: the model serving production traffic
+    - challenger: the candidate model for A/B testing
+    """
+    # Validate alias
+    if alias not in VALID_ALIASES:
+        console.print(
+            error_panel(f"Invalid alias '{alias}'. Must be one of: {', '.join(VALID_ALIASES)}")
+        )
+        raise typer.Exit(1)
+
     client = initialize_mlflow(tracking_uri=tracking_uri, configure_s3=False)
     uri = tracking_uri or str(settings.mlflow_tracking_uri)
 

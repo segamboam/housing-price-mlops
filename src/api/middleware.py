@@ -24,11 +24,13 @@ REQUEST_LATENCY = Histogram(
 PREDICTION_COUNT = Counter(
     "predictions_total",
     "Total number of predictions made",
+    ["model_alias"],
 )
 
 PREDICTION_LATENCY = Histogram(
     "prediction_duration_seconds",
     "Prediction latency in seconds",
+    ["model_alias"],
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5],
 )
 
@@ -42,6 +44,7 @@ MODEL_LOAD_STATUS = Counter(
 PREDICTION_VALUE = Histogram(
     "model_prediction_value",
     "Distribution of predicted housing prices in $1000s",
+    ["model_alias"],
     buckets=[5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
 )
 
@@ -49,6 +52,12 @@ OUT_OF_RANGE_TOTAL = Counter(
     "prediction_input_out_of_range_total",
     "Inputs with features outside training range",
     ["feature"],
+)
+
+TRAFFIC_SELECTION = Counter(
+    "traffic_selection_total",
+    "Which model was selected per request",
+    ["model_alias"],
 )
 
 
@@ -97,14 +106,15 @@ def get_metrics() -> bytes:
     return generate_latest()
 
 
-def record_prediction(duration: float) -> None:
+def record_prediction(duration: float, model_alias: str = "champion") -> None:
     """Record a prediction metric.
 
     Args:
         duration: Time taken for prediction in seconds.
+        model_alias: Which model served the prediction (champion/challenger).
     """
-    PREDICTION_COUNT.inc()
-    PREDICTION_LATENCY.observe(duration)
+    PREDICTION_COUNT.labels(model_alias=model_alias).inc()
+    PREDICTION_LATENCY.labels(model_alias=model_alias).observe(duration)
 
 
 def record_model_load(status: str, source: str) -> None:
@@ -117,13 +127,23 @@ def record_model_load(status: str, source: str) -> None:
     MODEL_LOAD_STATUS.labels(status=status, source=source).inc()
 
 
-def record_prediction_value(value: float) -> None:
+def record_prediction_value(value: float, model_alias: str = "champion") -> None:
     """Record the predicted value for distribution monitoring.
 
     Args:
         value: Predicted housing price in $1000s.
+        model_alias: Which model served the prediction (champion/challenger).
     """
-    PREDICTION_VALUE.observe(value)
+    PREDICTION_VALUE.labels(model_alias=model_alias).observe(value)
+
+
+def record_traffic_selection(model_alias: str) -> None:
+    """Record which model was selected by the traffic router.
+
+    Args:
+        model_alias: The selected model alias (champion/challenger).
+    """
+    TRAFFIC_SELECTION.labels(model_alias=model_alias).inc()
 
 
 def record_out_of_range(feature: str) -> None:

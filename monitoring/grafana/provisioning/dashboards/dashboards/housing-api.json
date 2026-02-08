@@ -2,10 +2,10 @@
   "title": "Housing Price API",
   "uid": "housing-api",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "id": null,
   "timezone": "browser",
-  "description": "Monitoreo operativo y de modelo: latencia, throughput, data drift y distribución de predicciones. Usar los Stats superiores para estado actual; gráficas para tendencias y decisión de reentrenamiento.",
+  "description": "Monitoreo operativo y de modelo: latencia, throughput, data drift, distribución de predicciones, y comparación champion vs challenger.",
   "refresh": "15s",
   "panels": [
     {
@@ -88,6 +88,35 @@
       "options": { "graphMode": "none", "colorMode": "value" }
     },
     {
+      "id": 15,
+      "title": "Champion Traffic %",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "description": "Porcentaje de tráfico servido por el modelo champion en los últimos 5 minutos.",
+      "targets": [
+        {
+          "expr": "sum(rate(traffic_selection_total{model_alias=\"champion\"}[5m])) / sum(rate(traffic_selection_total[5m])) * 100 or vector(50)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 45 },
+              { "color": "blue", "value": 55 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "value" }
+    },
+    {
       "id": 1,
       "title": "Predictions rate",
       "type": "timeseries",
@@ -95,7 +124,8 @@
       "description": "Tasa de predicciones por segundo. Correlacionar con tráfico a /predict.",
       "targets": [
         {
-          "expr": "rate(predictions_total[5m])",
+          "expr": "sum(rate(predictions_total[5m]))",
+          "legendFormat": "total",
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" }
         }
@@ -115,7 +145,7 @@
       "description": "Latencia p95 de predicción. Líneas de referencia: 100 ms (objetivo), 200 ms (alerta).",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(prediction_duration_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, sum(rate(prediction_duration_seconds_bucket[5m])) by (le))",
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" }
         }
@@ -203,13 +233,13 @@
       "description": "Mediana y p90 del valor predicho (precio en $1000s). Desplazamiento sostenido indica cambio de distribución de salida.",
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, rate(model_prediction_value_bucket[5m]))",
+          "expr": "histogram_quantile(0.5, sum(rate(model_prediction_value_bucket[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" }
         },
         {
-          "expr": "histogram_quantile(0.9, rate(model_prediction_value_bucket[5m]))",
+          "expr": "histogram_quantile(0.9, sum(rate(model_prediction_value_bucket[5m])) by (le))",
           "legendFormat": "p90",
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "prometheus" }
@@ -230,8 +260,123 @@
       "description": "Distribución por buckets del valor predicho. Complementa el panel de p50/p90 para ver forma de la distribución.",
       "targets": [
         {
-          "expr": "rate(model_prediction_value_bucket[5m])",
+          "expr": "sum(rate(model_prediction_value_bucket[5m])) by (le)",
           "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 100,
+      "title": "--- Champion vs Challenger ---",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 101,
+      "title": "Traffic Split (champion vs challenger)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 8 },
+      "description": "Distribución real de tráfico entre champion y challenger. Verificar que coincide con la configuración deseada.",
+      "targets": [
+        {
+          "expr": "sum(rate(traffic_selection_total{model_alias=\"champion\"}[5m]))",
+          "legendFormat": "champion",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "sum(rate(traffic_selection_total{model_alias=\"challenger\"}[5m]))",
+          "legendFormat": "challenger",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "Predictions rate por modelo",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 8 },
+      "description": "Tasa de predicciones por segundo separada por champion y challenger.",
+      "targets": [
+        {
+          "expr": "sum(rate(predictions_total{model_alias=\"champion\"}[5m]))",
+          "legendFormat": "champion",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "sum(rate(predictions_total{model_alias=\"challenger\"}[5m]))",
+          "legendFormat": "challenger",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 103,
+      "title": "Latencia p95 por modelo",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 45, "w": 12, "h": 8 },
+      "description": "Comparación de latencia p95 entre champion y challenger. Diferencias grandes pueden indicar modelos con complejidad distinta.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(prediction_duration_seconds_bucket{model_alias=\"champion\"}[5m])) by (le))",
+          "legendFormat": "champion p95",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(prediction_duration_seconds_bucket{model_alias=\"challenger\"}[5m])) by (le))",
+          "legendFormat": "challenger p95",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 104,
+      "title": "Prediction value p50 por modelo",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
+      "description": "Mediana del valor predicho por modelo. Diferencia sostenida indica que los modelos predicen rangos distintos.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(model_prediction_value_bucket{model_alias=\"champion\"}[5m])) by (le))",
+          "legendFormat": "champion p50",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(model_prediction_value_bucket{model_alias=\"challenger\"}[5m])) by (le))",
+          "legendFormat": "challenger p50",
+          "refId": "B",
           "datasource": { "type": "prometheus", "uid": "prometheus" }
         }
       ],

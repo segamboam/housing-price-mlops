@@ -37,7 +37,7 @@ GRAFANA_PORT := 3000
         install setup \
         preprocess cache-status cache-clear \
         train experiment \
-        runs register models promote info \
+        runs register models promote info traffic split \
         api \
         up dev down logs clean \
         test lint ci \
@@ -66,8 +66,10 @@ help: ## Show this help message
 	@echo "  \033[36mruns\033[0m             List MLflow experiment runs"
 	@echo "  \033[36mregister\033[0m         Register a run as model version (RUN_ID=xxx)"
 	@echo "  \033[36mmodels\033[0m           List registered model versions and aliases"
-	@echo "  \033[36mpromote\033[0m          Promote model version to production (VERSION=x)"
+	@echo "  \033[36mpromote\033[0m          Promote model version (VERSION=x ALIAS=champion|challenger)"
 	@echo "  \033[36minfo\033[0m             Show current model information"
+	@echo "  \033[36mtraffic\033[0m          Show current traffic split (champion/challenger)"
+	@echo "  \033[36msplit\033[0m            Set traffic split (WEIGHT=0.5 for 50/50)"
 	@echo ""
 	@echo "\033[1mAPI\033[0m"
 	@echo "  \033[36mapi\033[0m              Start API locally with hot-reload"
@@ -176,18 +178,39 @@ endif
 models: ## List registered model versions and aliases
 	$(CLI) promote --list
 
-promote: ## Promote model version to production. Usage: make promote VERSION=2
+promote: ## Promote model version. Usage: make promote VERSION=2 [ALIAS=champion]
 ifndef VERSION
 	@echo "Error: VERSION is required"
-	@echo "Usage: make promote VERSION=2"
+	@echo "Usage: make promote VERSION=2 ALIAS=champion"
+	@echo "       make promote VERSION=3 ALIAS=challenger"
 	@echo ""
+	@echo "Aliases: champion (production), challenger (A/B candidate)"
 	@echo "Tip: Use 'make models' to see available versions"
 	@exit 1
 endif
-	$(CLI) promote --version $(VERSION)
+	$(CLI) promote --version $(VERSION) --alias $(or $(ALIAS),champion)
 
 info: ## Show current model information
 	$(CLI) info
+
+traffic: ## Show current traffic split (champion/challenger)
+	@curl -s http://localhost:$(API_PORT)/model/traffic | $(PYTHON) -m json.tool
+
+split: ## Set traffic split. Usage: make split WEIGHT=0.7 (70% champion, 30% challenger)
+ifndef WEIGHT
+	@echo "Error: WEIGHT is required (0.0 - 1.0)"
+	@echo "Usage: make split WEIGHT=0.7"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make split WEIGHT=0.5   # 50/50 champion/challenger"
+	@echo "  make split WEIGHT=1.0   # 100% champion"
+	@echo "  make split WEIGHT=0.0   # 100% challenger"
+	@exit 1
+endif
+	@curl -s -X POST http://localhost:$(API_PORT)/model/traffic \
+		-H "Content-Type: application/json" \
+		-H "X-API-Key: $${API_KEY:-dev-api-key}" \
+		-d '{"champion_weight": $(WEIGHT)}' | $(PYTHON) -m json.tool
 
 #==============================================================================
 # API

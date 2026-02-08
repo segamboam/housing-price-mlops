@@ -32,6 +32,38 @@ class TestHealthEndpoint:
         assert "status" in data
         assert "model_loaded" in data
 
+    def test_health_includes_champion_challenger_status(self, mock_artifact_bundle):
+        """Health endpoint shows champion and challenger load status."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.get("/health")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "champion_loaded" in data
+        assert "challenger_loaded" in data
+        assert "traffic_split" in data
+        assert data["champion_loaded"] is True
+        assert data["challenger_loaded"] is True
+
+    def test_health_shows_traffic_split(self, mock_artifact_bundle):
+        """Health endpoint shows current effective traffic split."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.get("/health")
+
+        data = response.json()
+        split = data["traffic_split"]
+        assert "champion" in split
+        assert "challenger" in split
+        assert split["champion"] + split["challenger"] == pytest.approx(1.0)
+
 
 class TestRootEndpoint:
     """Tests for / endpoint."""
@@ -44,6 +76,13 @@ class TestRootEndpoint:
         data = response.json()
         assert "name" in data
         assert "version" in data
+
+    def test_root_includes_serving_strategy(self, client):
+        """Root endpoint indicates champion/challenger serving strategy."""
+        response = client.get("/")
+
+        data = response.json()
+        assert data["serving_strategy"] == "champion/challenger"
 
 
 class TestPredictEndpoint:
@@ -65,6 +104,20 @@ class TestPredictEndpoint:
         assert isinstance(data["prediction"], float)
         # Prediction should be a reasonable house price (in $1000s)
         assert 5.0 < data["prediction"] < 100.0
+
+    def test_predict_returns_served_by(self, sample_features_dict, mock_artifact_bundle):
+        """Predict response includes served_by field indicating which model was used."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post("/predict", json=sample_features_dict)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "served_by" in data
+        assert data["served_by"] in ("champion", "challenger")
 
     def test_predict_with_invalid_input_returns_422(self, mock_artifact_bundle):
         """Predict returns 422 for invalid input types."""
@@ -101,12 +154,97 @@ class TestPredictEndpoint:
         assert len(data["errors"]) >= 11  # At least 11 missing fields
 
 
+class TestTrafficRouting:
+    """Tests for champion/challenger traffic routing."""
+
+    def test_all_traffic_to_champion_when_weight_is_1(
+        self, sample_features_dict, mock_artifact_bundle
+    ):
+        """100% champion when weight is 1.0."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            # Set weight AFTER lifespan has run
+            app.state.champion_weight = 1.0
+            results = set()
+            for _ in range(10):
+                response = client.post("/predict", json=sample_features_dict)
+                assert response.status_code == 200
+                results.add(response.json()["served_by"])
+
+        assert results == {"champion"}
+        app.state.champion_weight = 0.5
+
+    def test_all_traffic_to_challenger_when_weight_is_0(
+        self, sample_features_dict, mock_artifact_bundle
+    ):
+        """100% challenger when weight is 0.0."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            # Set weight AFTER lifespan has run
+            app.state.champion_weight = 0.0
+            results = set()
+            for _ in range(10):
+                response = client.post("/predict", json=sample_features_dict)
+                assert response.status_code == 200
+                results.add(response.json()["served_by"])
+
+        assert results == {"challenger"}
+        app.state.champion_weight = 0.5
+
+    def test_only_champion_when_challenger_is_none(
+        self, sample_features_dict, mock_artifact_bundle
+    ):
+        """All traffic to champion when no challenger is loaded."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            # Remove challenger AFTER lifespan has run
+            app.state.challenger_bundle = None
+            results = set()
+            for _ in range(10):
+                response = client.post("/predict", json=sample_features_dict)
+                assert response.status_code == 200
+                results.add(response.json()["served_by"])
+
+        assert results == {"champion"}
+
+    def test_traffic_split_distributes_requests(self, sample_features_dict, mock_artifact_bundle):
+        """With 50/50 weight and both models loaded, both should receive traffic."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        app.state.champion_weight = 0.5
+
+        with TestClient(app) as client:
+            results = {"champion": 0, "challenger": 0}
+            for _ in range(50):
+                response = client.post("/predict", json=sample_features_dict)
+                assert response.status_code == 200
+                served = response.json()["served_by"]
+                results[served] += 1
+
+        # Both should have received some traffic (probabilistic but very safe)
+        assert results["champion"] > 0
+        assert results["challenger"] > 0
+
+
 class TestFeatureRangeChecking:
     """Tests for PredictionService._check_feature_ranges via the service layer."""
 
     def _make_service(self, mock_bundle: MLArtifactBundle) -> PredictionService:
         """Helper to create a PredictionService with the given bundle."""
-        return PredictionService(bundle=mock_bundle, settings=get_settings())
+        return PredictionService(
+            bundle=mock_bundle, settings=get_settings(), model_alias="champion"
+        )
 
     def test_feature_in_range_no_warning(
         self, sample_features_dict, feature_stats, mock_artifact_bundle
@@ -175,6 +313,8 @@ class TestBatchPredictEndpoint:
         request_data = {"items": [sample_features_dict, sample_features_dict]}
 
         with TestClient(app) as client:
+            # Force champion to use our configured mock
+            app.state.champion_weight = 1.0
             response = client.post("/predict/batch", json=request_data)
 
         assert response.status_code == 200
@@ -185,6 +325,26 @@ class TestBatchPredictEndpoint:
         assert data["predictions"][1]["index"] == 1
         assert "prediction" in data["predictions"][0]
         assert "prediction_formatted" in data["predictions"][0]
+        app.state.champion_weight = 0.5
+
+    def test_batch_predict_returns_served_by(self, sample_features_dict, mock_artifact_bundle):
+        """Batch prediction response includes served_by field."""
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        mock_artifact_bundle.predict.return_value = np.array([25.5])
+
+        request_data = {"items": [sample_features_dict]}
+
+        with TestClient(app) as client:
+            response = client.post("/predict/batch", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "served_by" in data
+        assert data["served_by"] in ("champion", "challenger")
 
     def test_batch_predict_single_item(self, sample_features_dict, mock_artifact_bundle):
         """Batch prediction works with single item."""
@@ -259,6 +419,8 @@ class TestBatchPredictEndpoint:
         items[1]["CRIM"] = 100.0  # Out of range
 
         with TestClient(app) as client:
+            # Force champion to ensure we use the bundle with feature_stats
+            app.state.champion_weight = 1.0
             response = client.post("/predict/batch", json={"items": items})
 
         assert response.status_code == 200
@@ -268,13 +430,14 @@ class TestBatchPredictEndpoint:
         # Second item should have CRIM warning
         assert len(data["predictions"][1]["warnings"]) > 0
         assert any("CRIM" in w for w in data["predictions"][1]["warnings"])
+        app.state.champion_weight = 0.5
 
 
 class TestModelReloadEndpoint:
     """Tests for /model/reload endpoint."""
 
-    def test_reload_success(self, mock_artifact_bundle, monkeypatch):
-        """Reload succeeds and returns old vs new info."""
+    def test_reload_both_models(self, mock_artifact_bundle, monkeypatch):
+        """Reload without alias reloads both champion and challenger."""
         from unittest.mock import MagicMock
 
         import numpy as np
@@ -282,20 +445,27 @@ class TestModelReloadEndpoint:
 
         from src.api.main import app
 
-        # Create a new mock for the reloaded bundle
-        new_mock_metadata = MagicMock()
-        new_mock_metadata.model_type = "gradient_boost"
-        new_mock_metadata.artifact_id = "new-model-87654321"
+        # Create new mock bundles for reload
+        new_champion = MagicMock()
+        new_champion.predict.return_value = np.array([30.0])
+        new_champion.metadata = MagicMock()
+        new_champion.metadata.model_type = "new_champion"
+        new_champion.metadata.artifact_id = "newchamp-12345678"
 
-        new_mock_bundle = MagicMock()
-        new_mock_bundle.predict.return_value = np.array([30.0])
-        new_mock_bundle.metadata = new_mock_metadata
+        new_challenger = MagicMock()
+        new_challenger.predict.return_value = np.array([31.0])
+        new_challenger.metadata = MagicMock()
+        new_challenger.metadata.model_type = "new_challenger"
+        new_challenger.metadata.artifact_id = "newchall-87654321"
 
-        # Mock load_bundle_from_mlflow to return new bundle
-        monkeypatch.setattr(
-            "src.api.main.load_bundle_from_mlflow",
-            lambda alias=None: (new_mock_bundle, "mlflow"),
-        )
+        def mock_load(alias=None):
+            if alias == "champion":
+                return (new_champion, "mlflow")
+            elif alias == "challenger":
+                return (new_challenger, "mlflow")
+            return (new_champion, "mlflow")
+
+        monkeypatch.setattr("src.api.main.load_bundle_from_mlflow", mock_load)
 
         with TestClient(app) as client:
             response = client.post("/model/reload")
@@ -303,13 +473,12 @@ class TestModelReloadEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert "previous_model" in data
-        assert "current_model" in data
-        assert data["current_model"]["artifact_id"] == "new-mode"  # First 8 chars
+        assert data["champion_model"] is not None
+        assert data["challenger_model"] is not None
         assert "reload_time_ms" in data
 
-    def test_reload_with_alias(self, mock_artifact_bundle, monkeypatch):
-        """Reload with specific alias parameter."""
+    def test_reload_specific_alias(self, mock_artifact_bundle, monkeypatch):
+        """Reload with specific alias only reloads that model."""
         from unittest.mock import MagicMock
 
         import numpy as np
@@ -317,31 +486,29 @@ class TestModelReloadEndpoint:
 
         from src.api.main import app
 
-        new_mock_metadata = MagicMock()
-        new_mock_metadata.model_type = "reloaded_model"
-        new_mock_metadata.artifact_id = "reloaded-12345678"
+        new_challenger = MagicMock()
+        new_challenger.predict.return_value = np.array([28.0])
+        new_challenger.metadata = MagicMock()
+        new_challenger.metadata.model_type = "reloaded_challenger"
+        new_challenger.metadata.artifact_id = "reloaded-12345678"
 
-        new_mock_bundle = MagicMock()
-        new_mock_bundle.predict.return_value = np.array([28.0])
-        new_mock_bundle.metadata = new_mock_metadata
-
-        captured_alias = []
+        captured_aliases = []
 
         def mock_load(alias=None):
-            captured_alias.append(alias)
-            return (new_mock_bundle, "mlflow")
+            captured_aliases.append(alias)
+            return (new_challenger, "mlflow")
 
         with TestClient(app) as client:
-            # Apply mock after TestClient init (lifespan already ran)
             monkeypatch.setattr("src.api.main.load_bundle_from_mlflow", mock_load)
-            response = client.post("/model/reload", json={"alias": "production"})
+            response = client.post("/model/reload", json={"alias": "challenger"})
 
         assert response.status_code == 200
-        # The reload endpoint should have been called with "production"
-        assert "production" in captured_alias
+        # Only challenger alias should have been loaded
+        assert "challenger" in captured_aliases
+        assert "champion" not in captured_aliases
 
-    def test_reload_failure_keeps_old_model(self, mock_artifact_bundle, monkeypatch):
-        """Failed reload keeps existing model."""
+    def test_reload_failure_keeps_old_models(self, mock_artifact_bundle, monkeypatch):
+        """Failed reload keeps existing models."""
         from fastapi.testclient import TestClient
 
         from src.api.main import app
@@ -358,8 +525,82 @@ class TestModelReloadEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "failed"
-        # Model should be unchanged
-        assert data["previous_model"] == data["current_model"]
+
+
+class TestTrafficConfigEndpoints:
+    """Tests for /model/traffic GET and POST endpoints."""
+
+    def test_get_traffic_config(self, mock_artifact_bundle):
+        """GET /model/traffic returns current config."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.get("/model/traffic")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "champion_weight" in data
+        assert "challenger_weight" in data
+        assert "champion_loaded" in data
+        assert "challenger_loaded" in data
+        assert "effective_split" in data
+        assert data["champion_weight"] + data["challenger_weight"] == pytest.approx(1.0)
+
+    def test_set_traffic_config(self, mock_artifact_bundle):
+        """POST /model/traffic updates the split."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/model/traffic",
+                json={"champion_weight": 0.7},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["champion_weight"] == pytest.approx(0.7)
+        assert data["challenger_weight"] == pytest.approx(0.3)
+
+        # Reset to 50/50
+        app.state.champion_weight = 0.5
+
+    def test_set_traffic_config_validates_range(self, mock_artifact_bundle):
+        """POST /model/traffic rejects invalid weights."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/model/traffic",
+                json={"champion_weight": 1.5},
+            )
+
+        assert response.status_code == 422
+
+    def test_set_traffic_all_to_champion(self, mock_artifact_bundle):
+        """POST /model/traffic can route 100% to champion."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/model/traffic",
+                json={"champion_weight": 1.0},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["champion_weight"] == 1.0
+        assert data["challenger_weight"] == 0.0
+
+        # Reset
+        app.state.champion_weight = 0.5
 
 
 class TestUnifiedErrorResponses:
