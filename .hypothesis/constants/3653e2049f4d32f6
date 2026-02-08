@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/data/preprocessing/strategies/v2_knn.py
+# hypothesis_version: 6.151.5
+
+['1.0.0', 'imputer', 'scaler', 'v2_knn']

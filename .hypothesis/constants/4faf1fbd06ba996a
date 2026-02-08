@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/models/evaluate.py
+# hypothesis_version: 6.151.5
+
+[0.0, 1e-08, 100, '-', 'Test', 'feature_importance', 'mae', 'mape', 'metrics', 'model_params', 'overfitting_warning', 'predictions', 'r2', 'rmse', 'test_metrics', 'train_metrics', 'w']

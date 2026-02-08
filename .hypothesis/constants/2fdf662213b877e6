@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/models/factory.py
+# hypothesis_version: 6.151.5
+
+['BaseModel', 'gradient_boost', 'linear', 'random_forest', 'xgboost']

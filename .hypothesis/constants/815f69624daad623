@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/models/strategies/random_forest.py
+# hypothesis_version: 6.151.5
+
+[150, 'max_depth', 'min_samples_leaf', 'min_samples_split', 'n_estimators', 'n_jobs', 'random_forest', 'random_state']

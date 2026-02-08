@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/api/main.py
+# hypothesis_version: 6.151.5
+
+[0.5, 1.0, 422, 503, 1000, '/', '/health', '/metrics', '/model/info', '/model/reload', '/model/traffic', '/predict', '/predict/batch', '; ', 'MIT', 'MLOps Team', 'Model load complete', 'artifact_bundle', 'artifact_id', 'auth_required', 'bundle', 'challenger', 'challenger recargado', 'challenger_bundle', 'challenger_source', 'champion', 'champion recargado', 'champion/challenger', 'champion_bundle', 'champion_weight', 'description', 'error', 'failed', 'failure', 'health', 'healthy', 'info', 'local', 'mlflow', 'model', 'model_type', 'monitoring', 'name', 'prediction', 'recargado', 'serving_strategy', 'success', 'traffic_split', 'url', 'version']

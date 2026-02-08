@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/.venv/bin/pytest
+# hypothesis_version: 6.151.5
+
+['-script.pyw', '.exe', '__main__']

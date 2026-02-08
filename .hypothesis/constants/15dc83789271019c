@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/models/cross_validation.py
+# hypothesis_version: 6.151.5
+
+[0.0, 0.1, 1.0, 'cv_n_splits', 'cv_r2_mean', 'cv_r2_scores', 'cv_r2_std', 'cv_rmse_mean', 'cv_rmse_scores', 'cv_rmse_std', 'gap_at_full_data', 'is_overfitting', 'r2', 'train_scores_mean', 'train_scores_std', 'train_sizes', 'val_scores_mean', 'val_scores_std']

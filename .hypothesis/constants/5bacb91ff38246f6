@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/data/cache.py
+# hypothesis_version: 6.151.5
+
+[0.2, 'AWS_ACCESS_KEY_ID', 'data-cache', 'data/HousingData.csv', 'data/processed', 'metadata.json', 'minioadmin', 'minioadmin123', 'preprocessor.joblib', 'processed-cache', 's3', 'test_X.parquet', 'test_y.parquet', 'train_X.parquet', 'train_y.parquet']

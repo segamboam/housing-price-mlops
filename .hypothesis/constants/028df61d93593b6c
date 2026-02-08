@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/data/loader.py
+# hypothesis_version: 6.151.5
+
+['AGE', 'B', 'CHAS', 'CRIM', 'DIS', 'INDUS', 'LSTAT', 'MEDV', 'NA', 'NOX', 'PTRATIO', 'RAD', 'RM', 'TAX', 'ZN', 'missing_values', 'n_columns', 'n_rows', 'total_missing']

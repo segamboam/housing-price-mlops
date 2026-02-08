@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/data/preprocess.py
+# hypothesis_version: 6.151.5
+
+[0.2, '--input', '--list', '--output', '--random-state', '--test-size', '--version', '-i', '-l', '-o', '-v', '__main__', 'created_at', 'data/HousingData.csv', 'feature_columns', 'feature_stats', 'input_file', 'max', 'mean', 'metadata.json', 'min', 'preprocessing_name', 'preprocessor.joblib', 'random_state', 'std', 'store_true', 'target_column', 'test_X.parquet', 'test_samples', 'test_size', 'test_y.parquet', 'train_X.parquet', 'train_samples', 'train_y.parquet', 'w']

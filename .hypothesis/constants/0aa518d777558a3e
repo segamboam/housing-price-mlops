@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/artifacts/bundle.py
+# hypothesis_version: 6.151.5
+
+['MLArtifactBundle', 'created_at', 'json', 'metadata.json', 'model.joblib', 'preprocessor.joblib', 'python', 'scikit-learn', 'w']

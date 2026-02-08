@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/api/dependencies.py
+# hypothesis_version: 6.151.5
+
+[0.5, 503, 'challenger_bundle', 'champion_bundle', 'champion_source', 'champion_weight', 'get_champion_bundle', 'get_model_source', 'get_settings', 'get_traffic_router', 'verify_api_key']

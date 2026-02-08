@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/api/error_handlers.py
+# hypothesis_version: 6.151.5
+
+[400, 401, 403, 404, 405, 409, 422, 429, 500, 503, '.', 'BAD_REQUEST', 'CONFLICT', 'FORBIDDEN', 'INTERNAL_ERROR', 'Invalid input data', 'METHOD_NOT_ALLOWED', 'NOT_FOUND', 'SERVICE_UNAVAILABLE', 'TOO_MANY_REQUESTS', 'UNAUTHORIZED', 'Unhandled exception', 'VALIDATION_ERROR', 'Validation error', 'headers', 'input', 'json', 'loc', 'msg']

@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/models/strategies/xgboost_model.py
+# hypothesis_version: 6.151.5
+
+[0.1, 0.8, 1.0, 150, 'XGBRegressor', 'colsample_bytree', 'learning_rate', 'max_depth', 'n_estimators', 'n_jobs', 'random_state', 'reg_alpha', 'reg_lambda', 'subsample', 'xgboost']

@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/config/settings.py
+# hypothesis_version: 6.151.5
+
+[0.1, 0.15, 0.2, 0.5, 1000.0, 100, 5000, 5432, 8000, 9000, 9001, '$', '.env', '1.0.0', 'AWS_ACCESS_KEY_ID', 'INFO', 'X-API-Key', 'artifact_bundle', 'challenger', 'champion', 'data/HousingData.csv', 'gradient_boost', 'housing-price-model', 'housing_model', 'ignore', 'localhost', 'minioadmin', 'minioadmin123', 'mlflow', 'mlflow-artifacts', 'mlflow123', 'models', 'utf-8', 'v2_knn']

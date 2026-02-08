@@ -40,7 +40,7 @@ GRAFANA_PORT := 3000
         runs register models promote info traffic split \
         api \
         up dev down logs clean \
-        test lint ci \
+        test test-unit test-property test-integration test-all lint ci \
         seed predict load-demo
 
 #==============================================================================
@@ -82,9 +82,13 @@ help: ## Show this help message
 	@echo "  \033[36mclean\033[0m            Stop services and remove volumes"
 	@echo ""
 	@echo "\033[1mTESTING & QUALITY\033[0m"
-	@echo "  \033[36mtest\033[0m             Run tests"
+	@echo "  \033[36mtest\033[0m             Run unit + property tests (no Docker needed)"
+	@echo "  \033[36mtest-unit\033[0m        Run unit + property tests"
+	@echo "  \033[36mtest-property\033[0m    Run property-based tests only (Hypothesis)"
+	@echo "  \033[36mtest-integration\033[0m Run integration smoke tests (requires make up)"
+	@echo "  \033[36mtest-all\033[0m         Run all tests including integration"
 	@echo "  \033[36mlint\033[0m             Run linter (ruff)"
-	@echo "  \033[36mci\033[0m               Run full CI pipeline"
+	@echo "  \033[36mci\033[0m               Run full CI pipeline (lint + test + build + integration)"
 	@echo ""
 	@echo "\033[1mDEMO\033[0m"
 	@echo "  \033[36mseed\033[0m             Seed MLflow with pre-trained model"
@@ -263,25 +267,46 @@ clean: ## Stop services and remove volumes (WARNING: deletes all data)
 #==============================================================================
 # TESTING & QUALITY
 #==============================================================================
-test: ## Run tests
+test: test-unit ## Run unit + property tests (no Docker needed)
+
+test-unit: ## Run unit + property tests (excludes integration)
 	$(PYTEST) $(TESTS)/ -v
+
+test-property: ## Run property-based tests only (Hypothesis)
+	$(PYTEST) $(TESTS)/test_property.py -v
+
+test-integration: ## Run integration smoke tests (requires: make up)
+	$(PYTEST) $(TESTS)/integration/ -v -m integration
+
+test-all: ## Run all tests including integration
+	$(PYTEST) $(TESTS)/ -v -m ""
 
 lint: ## Run linter (ruff)
 	$(RUFF) check $(SRC)/ $(TESTS)/
 	$(RUFF) format --check $(SRC)/ $(TESTS)/
 
-ci: ## Run full CI pipeline (lint + test + docker build)
+ci: ## Run full CI pipeline (lint + test + build + integration)
 	@echo "=== Running CI Pipeline ==="
 	@echo ""
 	@echo "1. Linting..."
 	$(RUFF) check $(SRC)/ $(TESTS)/
 	$(RUFF) format --check $(SRC)/ $(TESTS)/
 	@echo ""
-	@echo "2. Testing..."
+	@echo "2. Unit + Property Tests..."
 	$(PYTEST) $(TESTS)/ -v --cov=$(SRC) --cov-report=term-missing --cov-fail-under=70
 	@echo ""
 	@echo "3. Building Docker image..."
 	docker build -t housing-api:latest .
+	@echo ""
+	@echo "4. Integration Tests (starting services)..."
+	$(COMPOSE) up -d
+	@echo "Waiting for API to be healthy..."
+	@for i in $$(seq 1 30); do \
+		curl -sf http://localhost:$(API_PORT)/health > /dev/null 2>&1 && break; \
+		sleep 5; \
+	done
+	$(PYTEST) $(TESTS)/integration/ -v -m integration || ($(COMPOSE) down -v && exit 1)
+	$(COMPOSE) down -v
 	@echo ""
 	@echo "=== CI Pipeline Complete ==="
 

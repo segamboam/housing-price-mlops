@@ -1,0 +1,4 @@
+# file: /home/serch/projects/personal_proyects/05.meli-test/housing-price-mlops/src/api/middleware.py
+# hypothesis_version: 6.151.5
+
+[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, '/', '/metrics', 'Model load attempts', 'champion', 'endpoint', 'feature', 'http_requests_total', 'method', 'model_alias', 'model_load_total', 'predictions_total', 'source', 'status', 'status_code']
