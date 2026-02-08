@@ -49,8 +49,20 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W", "B", "S"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]        # assert is expected in tests
+"scripts/**/*.py" = [
+    "S101",   # assert in scripts
+    "S310",   # URL open is fine in utility scripts
+    "S311",   # pseudo-random OK for load testing (not crypto)
+]
+"src/api/main.py" = ["B008"]      # Depends() in defaults is standard FastAPI pattern
+"src/api/router.py" = ["S311"]    # random for A/B traffic split, not crypto
+"src/cli/**/*.py" = ["B008"]      # typer.Option() in defaults is standard Typer pattern
+"src/config/settings.py" = ["S105"]  # dev defaults, overridden by env vars in production
 
 [tool.coverage.run]
 source = ["src"]

@@ -14,4 +14,4 @@ def compute_dataset_hash(df: pd.DataFrame) -> str:
     Returns:
         12-character hexadecimal hash string.
     """
-    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()[:12]
+    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()[:12]  # noqa: S324

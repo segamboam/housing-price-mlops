@@ -58,7 +58,7 @@ def register(
                 runs = [run]
             except mlflow.exceptions.MlflowException:
                 console.print(error_panel(f"No run found with ID starting with '{run_id}'"))
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if len(runs) > 1:
             console.print(f"[yellow]Multiple runs found matching '{run_id}':[/yellow]\n")
@@ -137,4 +137,4 @@ def register(
 
     except mlflow.exceptions.MlflowException as e:
         console.print(error_panel(f"MLflow error: {e}"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

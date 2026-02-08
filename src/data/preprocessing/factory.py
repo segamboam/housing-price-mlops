@@ -74,7 +74,7 @@ class PreprocessorFactory:
                 available = cls.list_available()
                 raise ValueError(
                     f"Unknown preprocessing strategy '{strategy}'. Available: {available}"
-                )
+                ) from None
 
         if strategy not in cls._registry:
             available = cls.list_available()

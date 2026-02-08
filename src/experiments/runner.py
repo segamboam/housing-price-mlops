@@ -95,7 +95,7 @@ class ExperimentRunner:
                 hparam_values = [v if isinstance(v, list) else [v] for v in model_hparams.values()]
 
                 for combo in itertools.product(*hparam_values):
-                    hparams = dict(zip(hparam_keys, combo))
+                    hparams = dict(zip(hparam_keys, combo, strict=False))
                     configs.append(
                         ExperimentConfig(
                             model_type=model,

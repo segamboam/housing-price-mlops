@@ -42,7 +42,7 @@ class RandomForestStrategy(BaseModel):
         importance = self._model.feature_importances_
         return dict(
             sorted(
-                zip(feature_names, importance),
+                zip(feature_names, importance, strict=False),
                 key=lambda x: x[1],
                 reverse=True,
             )

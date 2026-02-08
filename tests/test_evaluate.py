@@ -141,7 +141,7 @@ class TestCalculateMetrics:
         y_pred = np.array([101, 199, 302])
         metrics = calculate_metrics(y_true, y_pred)
 
-        for key, value in metrics.items():
+        for _key, value in metrics.items():
             # Check that value has at most 4 decimal places
             assert round(value, 4) == value
 

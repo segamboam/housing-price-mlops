@@ -13,7 +13,6 @@ Usage:
 import json
 import os
 import random
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -77,11 +76,16 @@ def _perturb(payload: dict, jitter: float = 0.2) -> dict:
             delta = random.uniform(-jitter * v, jitter * v) if v else 0
             out[k] = int(round(_clamp(k, v + delta)))
         elif isinstance(v, float):
-            delta = random.uniform(-jitter * abs(v), jitter * abs(v)) if v else random.uniform(-jitter, jitter)
+            delta = (
+                random.uniform(-jitter * abs(v), jitter * abs(v))
+                if v
+                else random.uniform(-jitter, jitter)
+            )
             out[k] = round(_clamp(k, v + delta), 4)
         else:
             out[k] = v
     return out
+
 
 # -----------------------------------------------------------------------------
 # Payloads: different conditions for single predict
@@ -141,7 +145,7 @@ PAYLOAD_DRIFT_1 = {
     "INDUS": 5.0,
     "CHAS": 0,
     "NOX": 0.5,
-    "RM": 2.5,   # low vs typical 3.5–8.8
+    "RM": 2.5,  # low vs typical 3.5–8.8
     "AGE": 50.0,
     "DIS": 5.0,
     "RAD": 5,
@@ -151,7 +155,7 @@ PAYLOAD_DRIFT_1 = {
     "LSTAT": 50.0,  # high vs typical 1.7–38
 }
 PAYLOAD_DRIFT_2 = {
-    "CRIM": 90.0,   # very high vs typical 0–89
+    "CRIM": 90.0,  # very high vs typical 0–89
     "ZN": 10.0,
     "INDUS": 20.0,
     "CHAS": 1,
@@ -228,7 +232,9 @@ def main() -> None:
                     count_predict += 1
                     pred = body.get("prediction", "?")
                     w = body.get("warnings", [])
-                    print(f"  [{elapsed:5.1f}s] POST /predict -> {status} pred={pred} warnings={len(w)}")
+                    print(
+                        f"  [{elapsed:5.1f}s] POST /predict -> {status} pred={pred} warnings={len(w)}"
+                    )
                 else:
                     errors += 1
                     raw = body.get("_raw", str(body)) if isinstance(body, dict) else str(body)
@@ -257,7 +263,9 @@ def main() -> None:
 
     total = count_predict + count_batch
     print()
-    print(f"Done. Requests: {total} (predict={count_predict}, batch={count_batch}), errors={errors}")
+    print(
+        f"Done. Requests: {total} (predict={count_predict}, batch={count_batch}), errors={errors}"
+    )
     print("Check Grafana (Housing Price API dashboard) for updated metrics.")
 
 

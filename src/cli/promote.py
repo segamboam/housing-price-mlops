@@ -145,4 +145,4 @@ def promote(
 
     except mlflow.exceptions.MlflowException as e:
         console.print(error_panel(f"Failed to promote model: {e}"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

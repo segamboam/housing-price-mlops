@@ -6,52 +6,86 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  UV_VERSION: "0.6.1"
+  RUFF_VERSION: "0.8.6"
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ===========================================================================
+  # LINT - Standalone Ruff action (no Python venv needed)
+  # ===========================================================================
   lint:
+    name: Lint (Ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - name: Ruff check
+        uses: chartboost/ruff-action@v1
         with:
-          version: "latest"
+          version: ${{ env.RUFF_VERSION }}
+          args: check src/ tests/ scripts/
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - name: Ruff format check
+        uses: chartboost/ruff-action@v1
+        with:
+          version: ${{ env.RUFF_VERSION }}
+          args: format --check src/ tests/ scripts/
 
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev
-
-      - name: Run Ruff linter
-        run: uv run ruff check src/ tests/ scripts/
-
-      - name: Run Ruff formatter check
-        run: uv run ruff format --check src/ tests/ scripts/
-
+  # ===========================================================================
+  # TEST - Unit + property tests with coverage and artifacts
+  # ===========================================================================
   test:
+    name: Test (pytest)
     runs-on: ubuntu-latest
-    needs: lint
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
       - name: Run tests with coverage
-        run: uv run pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=65
+        run: |
+          uv run pytest tests/ -v \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=test-results.xml \
+            --cov-fail-under=70
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            test-results.xml
+            coverage.xml
+          retention-days: 30
+
+  # ===========================================================================
+  # BUILD - Docker image with BuildKit layer caching
+  # ===========================================================================
   build:
+    name: Build (Docker)
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -62,48 +96,98 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false
+          load: true
           tags: housing-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  integration:
+  # ===========================================================================
+  # SECURITY - Dependency audit + Docker image CVE scan
+  # ===========================================================================
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
-    needs: build
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Start Docker Compose services
-        run: docker compose up -d
-
-      - name: Wait for API to be healthy
-        run: |
-          echo "Waiting for API health check..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-              echo "API is healthy!"
-              exit 0
-            fi
-            echo "Attempt $i/30 - waiting 10s..."
-            sleep 10
-          done
-          echo "API failed to become healthy"
-          docker compose logs api
-          exit 1
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Audit dependencies (pip-audit)
+        run: |
+          uv pip install pip-audit --quiet
+          uv run pip-audit --requirement <(uv pip freeze) --strict
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: housing-api:scan
+          cache-from: type=gha
+
+      - name: Scan Docker image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: housing-api:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+  # ===========================================================================
+  # INTEGRATION - Full stack smoke tests with Docker Compose
+  # ===========================================================================
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [lint, test, build, security]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Docker Compose services
+        run: docker compose up -d --wait --wait-timeout 300
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
       - name: Run integration smoke tests
-        run: uv run pytest tests/integration/ -v -m integration
+        run: uv run pytest tests/integration/ -v -m integration --junitxml=integration-results.xml
+
+      - name: Upload integration results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results
+          path: integration-results.xml
+          retention-days: 30
+
+      - name: Dump service logs
+        if: always()
+        run: docker compose logs --tail=200
 
       - name: Tear down services
         if: always()

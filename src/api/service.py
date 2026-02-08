@@ -119,7 +119,7 @@ class PredictionService:
 
         # Build response items
         prediction_items = []
-        for i, (pred, warnings) in enumerate(zip(predictions, all_warnings)):
+        for i, (pred, warnings) in enumerate(zip(predictions, all_warnings, strict=False)):
             pred_value = round(float(pred), 2)
             prediction_items.append(
                 BatchPredictionItem(

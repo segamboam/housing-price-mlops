@@ -77,4 +77,4 @@ def runs(
 
     except Exception as e:
         console.print(error_panel(f"Failed to fetch runs: {e}"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
