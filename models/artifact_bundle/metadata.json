@@ -1,15 +1,14 @@
 {
-  "artifact_id": "4e0edfdc-2572-4b6e-8ba2-11d439d74793",
-  "created_at": "2026-01-04T19:55:18.902251+00:00",
-  "model_type": "gradient_boost",
+  "artifact_id": "dce7504b-fd5a-40c9-b6ab-31df9dc3eb49",
+  "created_at": "2026-01-15T20:55:19.595934+00:00",
+  "model_type": "random_forest",
   "model_params": {
-    "n_estimators": 100,
-    "max_depth": 3,
-    "learning_rate": 0.1,
-    "min_samples_split": 2,
+    "n_estimators": 150,
+    "max_depth": 15,
+    "min_samples_split": 6,
     "min_samples_leaf": 3,
-    "subsample": 0.8,
-    "random_state": 42
+    "random_state": 42,
+    "n_jobs": -1
   },
   "preprocessing_strategy": "v2_knn",
   "preprocessing_version": "1.0.0",
@@ -87,42 +86,42 @@
     }
   },
   "train_metrics": {
-    "rmse": 1.4806,
-    "mae": 1.1037,
-    "r2": 0.9748,
-    "mape": 5.7706,
+    "rmse": 2.215,
+    "mae": 1.289,
+    "r2": 0.9435,
+    "mape": 6.3991,
     "accuracy_within_10pct": 84.4059
   },
   "test_metrics": {
-    "rmse": 2.5497,
-    "mae": 1.8979,
-    "r2": 0.9114,
-    "mape": 10.2739,
-    "accuracy_within_10pct": 63.7255
+    "rmse": 3.1502,
+    "mae": 2.1085,
+    "r2": 0.8647,
+    "mape": 11.4787,
+    "accuracy_within_10pct": 61.7647
   },
   "cv_metrics": {
-    "cv_rmse_mean": 3.5004,
-    "cv_rmse_std": 0.6407,
-    "cv_r2_mean": 0.8555,
-    "cv_r2_std": 0.0376,
+    "cv_rmse_mean": 4.0332,
+    "cv_rmse_std": 0.7289,
+    "cv_r2_mean": 0.8035,
+    "cv_r2_std": 0.069,
     "cv_n_splits": 5.0
   },
   "feature_importance": {
-    "RM": 0.4280797789772916,
-    "LSTAT": 0.3614010935750607,
-    "DIS": 0.06144329028477185,
-    "CRIM": 0.04579919403312022,
-    "PTRATIO": 0.03486560840640535,
-    "NOX": 0.019695877064352628,
-    "TAX": 0.01504730235868227,
-    "AGE": 0.014786684627851718,
-    "B": 0.0123994402261469,
-    "INDUS": 0.003045256500415871,
-    "RAD": 0.0019774420841276712,
-    "CHAS": 0.001257508789226611,
-    "ZN": 0.00020152307254659154
+    "RM": 0.5452484985588382,
+    "LSTAT": 0.30152478021239115,
+    "DIS": 0.044438034854659234,
+    "CRIM": 0.029259738689353255,
+    "PTRATIO": 0.01904129530715647,
+    "NOX": 0.017491455279445046,
+    "TAX": 0.011817379976928232,
+    "B": 0.010420457248496657,
+    "AGE": 0.00999465009238136,
+    "INDUS": 0.005395949339188406,
+    "RAD": 0.0024707933064340034,
+    "CHAS": 0.002092146020693678,
+    "ZN": 0.0008048211140343922
   },
-  "mlflow_run_id": "88eb0b40d7954e529185bc028f848d6c",
+  "mlflow_run_id": "2e9cb90cbbee4f27bcd9b1978bc09f09",
   "mlflow_experiment_name": "housing-price-prediction",
   "artifact_version": "1.0.0",
   "framework_versions": {

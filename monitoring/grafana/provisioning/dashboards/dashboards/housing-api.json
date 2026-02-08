@@ -1,0 +1,247 @@
+{
+  "title": "Housing Price API",
+  "uid": "housing-api",
+  "schemaVersion": 38,
+  "version": 1,
+  "id": null,
+  "timezone": "browser",
+  "description": "Monitoreo operativo y de modelo: latencia, throughput, data drift y distribución de predicciones. Usar los Stats superiores para estado actual; gráficas para tendencias y decisión de reentrenamiento.",
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 10,
+      "title": "Predicciones / min",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "description": "Tasa de predicciones por minuto. Si cae a 0 con tráfico esperado, revisar API o modelo.",
+      "targets": [
+        {
+          "expr": "sum(rate(predictions_total[5m])) * 60",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "value" }
+    },
+    {
+      "id": 11,
+      "title": "p95 Latencia (actual)",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "description": "Percentil 95 de latencia de predicción. Objetivo típico < 100 ms; > 200 ms revisar rendimiento.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(prediction_duration_seconds_bucket[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "value" }
+    },
+    {
+      "id": 12,
+      "title": "Features en drift (1h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "description": "Número de features con inputs fuera de rango en la última hora. Alto valor sugiere revisar datos o reentrenar.",
+      "targets": [
+        {
+          "expr": "count(count by (feature) (increase(prediction_input_out_of_range_total[1h]) > 0)) or vector(0)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "value" }
+    },
+    {
+      "id": 1,
+      "title": "Predictions rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "description": "Tasa de predicciones por segundo. Correlacionar con tráfico a /predict.",
+      "targets": [
+        {
+          "expr": "rate(predictions_total[5m])",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Prediction latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "description": "Latencia p95 de predicción. Líneas de referencia: 100 ms (objetivo), 200 ms (alerta).",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(prediction_duration_seconds_bucket[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "HTTP request rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "description": "Peticiones por segundo por endpoint. /predict es el tráfico de inferencia.",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (endpoint)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "HTTP 5xx rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "description": "Tasa de respuestas 5xx. Cualquier valor sostenido requiere revisión.",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Inputs out of range (data drift)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "description": "Incremento de inputs fuera de rango por feature. Priorizar features con subida sostenida para revisión o reentrenamiento.",
+      "targets": [
+        {
+          "expr": "increase(prediction_input_out_of_range_total[1h])",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Prediction value (p50 / p90)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "description": "Mediana y p90 del valor predicho (precio en $1000s). Desplazamiento sostenido indica cambio de distribución de salida.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, rate(model_prediction_value_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "histogram_quantile(0.9, rate(model_prediction_value_bucket[5m]))",
+          "legendFormat": "p90",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Model prediction value (distribution)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 8 },
+      "description": "Distribución por buckets del valor predicho. Complementa el panel de p50/p90 para ver forma de la distribución.",
+      "targets": [
+        {
+          "expr": "rate(model_prediction_value_bucket[5m])",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    }
+  ],
+  "time": { "from": "now-1h", "to": "now" }
+}

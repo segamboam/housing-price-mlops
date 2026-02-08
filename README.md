@@ -140,9 +140,12 @@ uv run python -m src.cli.main promote --version 2
 │                    │  │  │ /model/info  │  │ /model/reload   │  │     │    │
 │                    │  │  └──────────────┘  └─────────────────┘  │     │    │
 │                    │  └─────────────────────────────────────────┘     │    │
-│                    │                                                  │    │
+│                    │         │ /metrics (scrape)                      │    │
+│                    │         ▼  Prometheus → Grafana (dashboards)      │    │
 └────────────────────┴──────────────────────────────────────────────────┴────┘
 ```
+
+*Prometheus scrapea `/metrics` de la API; Grafana consume Prometheus para dashboards.*
 
 ### Estructura del Proyecto
 
@@ -642,22 +645,34 @@ cp .env.example .env
 | `MLFLOW_BUCKET_NAME` | Bucket para artefactos | `mlflow-artifacts` |
 | **Monitoring** | | |
 | `METRICS_ENABLED` | Habilitar métricas Prometheus | `true` |
+| `PROMETHEUS_PORT` | Puerto de Prometheus (Compose) | `9090` |
+| `GRAFANA_PORT` | Puerto de Grafana (Compose) | `3000` |
+| `GRAFANA_ADMIN_PASSWORD` | Contraseña admin de Grafana | `admin` (cambiar en producción) |
 
 ---
 
 ## Monitoreo
 
-### Métricas Prometheus
+Con `make up` se levantan **Prometheus** y **Grafana** además de la API. Prometheus scrapea `/metrics` cada 15s; Grafana tiene el datasource Prometheus ya configurado.
 
-La API expone métricas en `/metrics`:
+- **Prometheus:** http://localhost:9090 — targets en `/targets`, consultas en `/graph`
+- **Grafana:** http://localhost:3000 — usuario `admin`, contraseña por defecto `admin` (configurable con `GRAFANA_ADMIN_PASSWORD` en `.env`). El datasource "Prometheus" está provisionado; en **Explore** puedes ejecutar por ejemplo `rate(predictions_total[1m])` o `histogram_quantile(0.95, rate(prediction_duration_seconds_bucket[5m]))`. Para crear un dashboard: **Dashboards → New → Add visualization**, elegir Prometheus y las métricas siguientes.
+
+**Generar tráfico para ver el dashboard:** ejecuta `make load-demo` (por defecto 15 s, 1 req/s). Puedes configurar duración e intervalo: `make load-demo DURATION=60 INTERVAL=0.5`. Los datos se generan con variación aleatoria en los rangos válidos para simular tráfico más realista.
+
+### Métricas Prometheus (API `/metrics`)
+
+La API expone métricas en `/metrics` (nombres alineados con el código):
 
 | Métrica | Tipo | Descripción |
 |---------|------|-------------|
-| `prediction_requests_total` | Counter | Total de predicciones realizadas |
-| `prediction_latency_seconds` | Histogram | Latencia de predicciones |
-| `prediction_values` | Histogram | Distribución de valores predichos |
-| `model_load_time_seconds` | Gauge | Tiempo de carga del modelo |
-| `out_of_range_features_total` | Counter | Features fuera de rango (data drift) |
+| `http_requests_total` | Counter | Total de peticiones HTTP (labels: method, endpoint, status_code) |
+| `http_request_duration_seconds` | Histogram | Latencia de peticiones HTTP |
+| `predictions_total` | Counter | Total de predicciones realizadas |
+| `prediction_duration_seconds` | Histogram | Latencia de predicciones |
+| `model_prediction_value` | Histogram | Distribución de valores predichos (precio en $1000s) |
+| `prediction_input_out_of_range_total` | Counter | Features fuera de rango por feature (data drift) |
+| `model_load_total` | Counter | Intentos de carga de modelo (labels: status, source) |
 
 ### MLflow UI
 
@@ -764,7 +779,7 @@ curl http://localhost:5000/health    # Health check de MLflow
 | Mejora | Descripción | Justificación |
 |--------|-------------|---------------|
 | **Versionamiento de Datos** | Control de versiones para datasets (ej: DVC, LakeFS) | Reproducibilidad completa de experimentos históricos |
-| **Dashboard Grafana** | Visualización de métricas Prometheus | Monitoreo en tiempo real de latencia y errores |
+| **Dashboard Grafana** | Visualización de métricas Prometheus | Implementado: Prometheus + Grafana en el stack; ver [Monitoreo](#monitoreo) |
 | **Detección de Drift** | Alertas con PSI/KS-test | Detectar cuándo el modelo necesita reentrenamiento |
 | **Explicabilidad (SHAP)** | Endpoint `/explain` con importancia de features | Transparencia en decisiones de crédito |
 

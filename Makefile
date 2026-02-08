@@ -22,6 +22,8 @@ TESTS := tests
 # Ports
 API_PORT := 8000
 MLFLOW_PORT := 5000
+PROMETHEUS_PORT := 9090
+GRAFANA_PORT := 3000
 
 #------------------------------------------------------------------------------
 # Default target
@@ -39,7 +41,7 @@ MLFLOW_PORT := 5000
         api \
         up dev down logs clean \
         test lint ci \
-        seed predict
+        seed predict load-demo
 
 #==============================================================================
 # HELP
@@ -85,6 +87,7 @@ help: ## Show this help message
 	@echo "\033[1mDEMO\033[0m"
 	@echo "  \033[36mseed\033[0m             Seed MLflow with pre-trained model"
 	@echo "  \033[36mpredict\033[0m          Make a sample prediction via API"
+	@echo "  \033[36mload-demo\033[0m        Generate load on API for 15s for Grafana dashboard"
 
 #==============================================================================
 # SETUP
@@ -201,13 +204,15 @@ up: ## Start full stack (infra + API in containers)
 	@timeout 120 bash -c 'until docker inspect mlflow-server --format="{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 2; done' || (echo "MLflow failed to start"; exit 1)
 	@echo "Seeding MLflow if needed..."
 	@$(PYTHON) scripts/seed_mlflow.py || true
-	$(COMPOSE) up -d api
+	$(COMPOSE) up -d api prometheus grafana
 	@echo ""
 	@echo "Stack ready!"
 	@echo "  API:           http://localhost:$(API_PORT)"
 	@echo "  API Docs:      http://localhost:$(API_PORT)/docs"
 	@echo "  MLflow UI:     http://localhost:$(MLFLOW_PORT)"
 	@echo "  MinIO Console: http://localhost:9001"
+	@echo "  Prometheus:    http://localhost:$(PROMETHEUS_PORT)"
+	@echo "  Grafana:       http://localhost:$(GRAFANA_PORT)"
 
 dev: ## Start infrastructure only (for local API development)
 	$(COMPOSE) up -d postgres minio minio-init mlflow
@@ -268,3 +273,8 @@ predict: ## Make a sample prediction via API
 		-H "Content-Type: application/json" \
 		-H "X-API-Key: dev-api-key" \
 		-d '{"CRIM":0.00632,"ZN":18.0,"INDUS":2.31,"CHAS":0,"NOX":0.538,"RM":6.575,"AGE":65.2,"DIS":4.09,"RAD":1,"TAX":296.0,"PTRATIO":15.3,"B":396.9,"LSTAT":4.98}' | $(PYTHON) -m json.tool
+
+load-demo: ## Generate load on API for Grafana. Usage: make load-demo [DURATION=15] [INTERVAL=1]
+	@API_BASE_URL=http://localhost:$(API_PORT) API_KEY=$${API_KEY:-dev-api-key} \
+		DURATION="$(DURATION)" INTERVAL="$(INTERVAL)" \
+		$(PYTHON) scripts/load_predict_api.py
