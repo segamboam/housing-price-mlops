@@ -123,7 +123,7 @@ class TestEndToEndPipeline:
         # Load the bundle we trained
         loaded_bundle = MLArtifactBundle.load(bundle_path)
 
-        # Mock the API to use our bundle instead of loading from MLflow
+        # Disable API key and mock loading functions
         monkeypatch.setattr("src.api.security.settings.api_key", None)
         monkeypatch.setattr(
             "src.api.main.load_bundle_from_mlflow",

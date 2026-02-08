@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 from src.config.settings import get_settings
@@ -195,10 +197,54 @@ class ModelInfoResponse(BaseModel):
     )
 
 
-class ErrorResponse(BaseModel):
-    """Schema for error responses."""
+class ErrorDetail(BaseModel):
+    """Individual validation error detail."""
 
-    detail: str = Field(..., description="Error message")
+    field: str | None = Field(None, description="Campo que causó el error (ej: 'body.CRIM')")
+    message: str = Field(..., description="Descripción del error")
+    value: Any | None = Field(None, description="Valor recibido que causó el error")
+
+
+class ErrorResponse(BaseModel):
+    """Unified schema for all error responses.
+
+    All API errors return this same structure for consistency.
+    The 'errors' list is populated only for validation errors (422).
+    """
+
+    detail: str = Field(..., description="Mensaje de error legible")
+    code: str = Field(
+        ...,
+        description="Código de error para manejo programático "
+        "(ej: VALIDATION_ERROR, MODEL_NOT_LOADED, UNAUTHORIZED)",
+    )
+    errors: list[ErrorDetail] | None = Field(
+        None,
+        description="Lista de errores de validación individuales (solo para 422)",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "detail": "Invalid input data",
+                    "code": "VALIDATION_ERROR",
+                    "errors": [
+                        {
+                            "field": "body.CRIM",
+                            "message": "Input should be greater than or equal to 0",
+                            "value": -1.0,
+                        }
+                    ],
+                },
+                {
+                    "detail": "Model not loaded. Please train the model first.",
+                    "code": "SERVICE_UNAVAILABLE",
+                    "errors": None,
+                },
+            ]
+        }
+    }
 
 
 # Batch Prediction Schemas

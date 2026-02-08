@@ -81,8 +81,9 @@ def feature_stats() -> dict:
 def mock_artifact_bundle(monkeypatch):
     """Mock del artifact_bundle para tests de API sin modelo real.
 
-    Also disables API key authentication for testing.
-    Mocks the loading functions to prevent MLflow/external connections.
+    Sets up app.state with a mock bundle and disables API key authentication.
+    Also mocks the loading functions to prevent MLflow/external connections
+    during the lifespan startup.
     """
     # Disable API key requirement by patching the settings object in security module
     monkeypatch.setattr("src.api.security.settings.api_key", None)
@@ -107,8 +108,10 @@ def mock_artifact_bundle(monkeypatch):
         lambda: (mock_bundle, "bundle"),
     )
 
-    # Also set the global directly for tests that don't trigger lifespan
-    monkeypatch.setattr("src.api.main.artifact_bundle", mock_bundle)
-    monkeypatch.setattr("src.api.main.model_source", "mock")
+    # Also set app.state directly for tests that don't trigger lifespan
+    from src.api.main import app
+
+    app.state.artifact_bundle = mock_bundle
+    app.state.model_source = "mock"
 
     return mock_bundle

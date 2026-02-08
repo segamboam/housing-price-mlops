@@ -4,21 +4,23 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 
-import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Response
 
+from src.api.dependencies import (
+    get_artifact_bundle,
+    get_model_source,
+    get_optional_bundle,
+)
+from src.api.error_handlers import register_error_handlers
 from src.api.middleware import (
     PrometheusMiddleware,
     get_metrics,
     record_model_load,
-    record_out_of_range,
-    record_prediction,
-    record_prediction_value,
 )
 from src.api.schemas import (
-    BatchPredictionItem,
     BatchPredictionRequest,
     BatchPredictionResponse,
+    ErrorResponse,
     HealthResponse,
     HousingFeatures,
     ModelInfoResponse,
@@ -27,9 +29,9 @@ from src.api.schemas import (
     PredictionResponse,
 )
 from src.api.security import verify_api_key
+from src.api.service import PredictionService
 from src.artifacts.bundle import MLArtifactBundle
 from src.config.settings import get_settings
-from src.data.loader import FEATURE_COLUMNS
 from src.logging_config import setup_logging
 
 settings = get_settings()
@@ -37,17 +39,13 @@ settings = get_settings()
 # Initialize logger
 logger = setup_logging(settings.log_level, settings.log_json_format)
 
-# Global state
-artifact_bundle: MLArtifactBundle | None = None
-model_source: str | None = None
-
 # Lock para operaciones de recarga de modelo (thread-safety)
 _reload_lock = asyncio.Lock()
 
 
-def features_to_dict(features: HousingFeatures) -> dict[str, float]:
-    """Convert HousingFeatures object to dictionary with correct column order."""
-    return {col: getattr(features, col) for col in FEATURE_COLUMNS}
+# ------------------------------------------------------------------
+# Model loading helpers
+# ------------------------------------------------------------------
 
 
 def load_artifact_bundle() -> tuple[MLArtifactBundle | None, str | None]:
@@ -127,6 +125,11 @@ def load_bundle_from_mlflow(
         return None, None
 
 
+# ------------------------------------------------------------------
+# Lifespan
+# ------------------------------------------------------------------
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model on startup.
@@ -134,24 +137,36 @@ async def lifespan(app: FastAPI):
     Priority order:
     1. MLflow Registry (production alias) - downloads complete artifact bundle
     2. Local artifact bundle (fallback)
-    """
-    global artifact_bundle, model_source
 
+    State is stored in ``app.state`` so it can be accessed through
+    dependency injection instead of module-level globals.
+    """
     logger.info("Starting model load sequence")
 
-    # Priority 1: Try MLflow Registry - download artifact bundle from production model
+    bundle: MLArtifactBundle | None = None
+    source: str | None = None
+
+    # Priority 1: Try MLflow Registry
     if settings.mlflow_tracking_uri:
-        artifact_bundle, model_source = load_bundle_from_mlflow()
+        bundle, source = load_bundle_from_mlflow()
 
     # Priority 2: Fallback to local artifact bundle
-    if artifact_bundle is None:
-        artifact_bundle, model_source = load_artifact_bundle()
+    if bundle is None:
+        bundle, source = load_artifact_bundle()
 
-    if artifact_bundle is None:
+    if bundle is None:
         logger.warning("No model available for predictions")
+
+    # Store in app.state for dependency injection
+    app.state.artifact_bundle = bundle
+    app.state.model_source = source
 
     yield
 
+
+# ------------------------------------------------------------------
+# Application
+# ------------------------------------------------------------------
 
 app = FastAPI(
     title=settings.api_title,
@@ -200,9 +215,27 @@ curl -X POST "http://localhost:8000/predict" \\
     ],
 )
 
+# Register unified error handlers (must be after app creation)
+register_error_handlers(app)
+
 # Add Prometheus middleware if enabled
 if settings.metrics_enabled:
     app.add_middleware(PrometheusMiddleware)
+
+
+# ------------------------------------------------------------------
+# Helper: build a PredictionService from current app state
+# ------------------------------------------------------------------
+
+
+def _build_service(bundle: MLArtifactBundle) -> PredictionService:
+    """Create a PredictionService from an artifact bundle."""
+    return PredictionService(bundle=bundle, settings=settings)
+
+
+# ------------------------------------------------------------------
+# Endpoints
+# ------------------------------------------------------------------
 
 
 @app.get("/", tags=["info"])
@@ -217,12 +250,14 @@ async def root():
 
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
-async def health_check():
+async def health_check(
+    bundle: MLArtifactBundle | None = Depends(get_optional_bundle),
+    model_source: str | None = Depends(get_model_source),
+):
     """Check API health status."""
-    model_loaded = artifact_bundle is not None
     return HealthResponse(
         status="healthy",
-        model_loaded=model_loaded,
+        model_loaded=bundle is not None,
         model_source=model_source,
     )
 
@@ -233,87 +268,36 @@ async def metrics():
     return Response(content=get_metrics(), media_type="text/plain; charset=utf-8")
 
 
-@app.get("/model/info", response_model=ModelInfoResponse, tags=["model"])
-async def model_info():
+@app.get(
+    "/model/info",
+    response_model=ModelInfoResponse,
+    responses={503: {"model": ErrorResponse}},
+    tags=["model"],
+)
+async def model_info(
+    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
+    model_source: str | None = Depends(get_model_source),
+):
     """Obtener información detallada del modelo activo.
 
     Incluye métricas, feature importance, y metadata de MLflow.
-    Nota: Si se usa MLflow para predicciones, la metadata viene del artifact bundle local.
     """
-    if artifact_bundle is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Model info no disponible. No se encontró artifact bundle.",
-        )
-
-    metadata = artifact_bundle.metadata
-    return ModelInfoResponse(
-        model_type=metadata.model_type,
-        preprocessing_strategy=metadata.preprocessing_strategy,
-        preprocessing_version=metadata.preprocessing_version,
-        feature_names=metadata.feature_names,
-        training_samples=metadata.training_samples,
-        test_samples=metadata.test_samples if metadata.test_samples else None,
-        train_metrics=metadata.train_metrics,
-        test_metrics=metadata.test_metrics,
-        feature_importance=metadata.feature_importance if metadata.feature_importance else None,
-        artifact_id=metadata.artifact_id,
-        mlflow_run_id=metadata.mlflow_run_id,
-        mlflow_experiment=metadata.mlflow_experiment_name,
-        created_at=metadata.created_at.isoformat() if metadata.created_at else None,
-        prediction_source=model_source,
-    )
+    service = _build_service(bundle)
+    return service.get_model_info(model_source)
 
 
-def check_feature_ranges(
-    features: HousingFeatures,
-    feature_stats: dict[str, dict[str, float]],
-) -> list[str]:
-    """Check if input features are within training data ranges.
-
-    Args:
-        features: Input features from the request.
-        feature_stats: Statistics (min, max) from training data.
-
-    Returns:
-        List of warning messages for out-of-range features.
-    """
-    warnings = []
-    for col in FEATURE_COLUMNS:
-        value = getattr(features, col)
-        stats = feature_stats.get(col)
-        if stats is None:
-            continue
-
-        min_val = stats.get("min")
-        max_val = stats.get("max")
-
-        if min_val is not None and value < min_val:
-            warnings.append(f"{col} ({value}) is below training min ({min_val:.2f})")
-            record_out_of_range(col)
-        elif max_val is not None and value > max_val:
-            warnings.append(f"{col} ({value}) is above training max ({max_val:.2f})")
-            record_out_of_range(col)
-
-    return warnings
-
-
-def format_price(value: float) -> str:
-    """Format prediction value as currency string.
-
-    Args:
-        value: Raw prediction value (in model units, e.g., $1000s).
-
-    Returns:
-        Formatted price string (e.g., "$24,500").
-    """
-    display_value = value * settings.price_multiplier
-    return f"{settings.currency_symbol}{display_value:,.0f}"
-
-
-@app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    responses={
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    tags=["prediction"],
+)
 async def predict(
     features: HousingFeatures,
+    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
     api_key: str | None = Depends(verify_api_key),
 ):
     """Predict housing price based on features.
@@ -321,45 +305,22 @@ async def predict(
     Requires API key authentication if API_KEY environment variable is set.
     Returns warnings if input features are outside training data ranges.
     """
-    start_time = time.perf_counter()
-    warnings: list[str] = []
-
-    if artifact_bundle is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Please train the model first.",
-        )
-
-    # Check feature ranges against training data statistics
-    feature_stats = artifact_bundle.metadata.feature_stats
-    if feature_stats:
-        warnings = check_feature_ranges(features, feature_stats)
-
-    # Create DataFrame with features in correct order
-    X = pd.DataFrame([features_to_dict(features)])
-
-    # Bundle handles preprocessing + prediction
-    prediction = artifact_bundle.predict(X)[0]
-    model_version = artifact_bundle.metadata.artifact_id[:8]
-
-    # Record prediction metrics
-    duration = time.perf_counter() - start_time
-    record_prediction(duration)
-    record_prediction_value(float(prediction))
-
-    prediction_value = round(float(prediction), 2)
-    return PredictionResponse(
-        prediction=prediction_value,
-        prediction_formatted=format_price(prediction_value),
-        model_version=model_version,
-        model_type=artifact_bundle.metadata.model_type if artifact_bundle else None,
-        warnings=warnings,
-    )
+    service = _build_service(bundle)
+    return service.predict(features)
 
 
-@app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["prediction"])
+@app.post(
+    "/predict/batch",
+    response_model=BatchPredictionResponse,
+    responses={
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    tags=["prediction"],
+)
 async def predict_batch(
     request: BatchPredictionRequest,
+    bundle: MLArtifactBundle = Depends(get_artifact_bundle),
     api_key: str | None = Depends(verify_api_key),
 ):
     """Predicción en lote para múltiples sets de features.
@@ -371,63 +332,16 @@ async def predict_batch(
     Máximo 100 items por request.
     Retorna warnings por item para features fuera de rango.
     """
-    start_time = time.perf_counter()
-
-    if artifact_bundle is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Please train the model first.",
-        )
-
-    items = request.items
-
-    # Collect warnings for each item
-    all_warnings: list[list[str]] = []
-    feature_stats = artifact_bundle.metadata.feature_stats or {}
-
-    for features in items:
-        if feature_stats:
-            warnings = check_feature_ranges(features, feature_stats)
-        else:
-            warnings = []
-        all_warnings.append(warnings)
-
-    # Build DataFrame with all items for efficient batch processing
-    X = pd.DataFrame([features_to_dict(features) for features in items])
-
-    # Predict all at once
-    predictions = artifact_bundle.predict(X)
-    model_version = artifact_bundle.metadata.artifact_id[:8]
-    model_type = artifact_bundle.metadata.model_type
-
-    # Build response items
-    prediction_items = []
-    for i, (pred, warnings) in enumerate(zip(predictions, all_warnings)):
-        pred_value = round(float(pred), 2)
-        prediction_items.append(
-            BatchPredictionItem(
-                index=i,
-                prediction=pred_value,
-                prediction_formatted=format_price(pred_value),
-                warnings=warnings,
-            )
-        )
-        record_prediction_value(float(pred))
-
-    # Record metrics
-    duration = time.perf_counter() - start_time
-    record_prediction(duration)
-
-    return BatchPredictionResponse(
-        predictions=prediction_items,
-        model_version=model_version,
-        model_type=model_type,
-        total_items=len(items),
-        processing_time_ms=duration * 1000,
-    )
+    service = _build_service(bundle)
+    return service.predict_batch(request.items)
 
 
-@app.post("/model/reload", response_model=ModelReloadResponse, tags=["model"])
+@app.post(
+    "/model/reload",
+    response_model=ModelReloadResponse,
+    responses={503: {"model": ErrorResponse}},
+    tags=["model"],
+)
 async def reload_model(
     request: ModelReloadRequest | None = None,
     api_key: str | None = Depends(verify_api_key),
@@ -439,18 +353,21 @@ async def reload_model(
 
     Requiere autenticación si está configurada.
     """
-    global artifact_bundle, model_source
-
     async with _reload_lock:
         start_time = time.perf_counter()
 
         # Capture previous model info
+        current_bundle: MLArtifactBundle | None = getattr(
+            app.state, "artifact_bundle", None
+        )
+        current_source: str | None = getattr(app.state, "model_source", None)
+
         previous_info = None
-        if artifact_bundle is not None:
+        if current_bundle is not None:
             previous_info = {
-                "artifact_id": artifact_bundle.metadata.artifact_id[:8],
-                "model_type": artifact_bundle.metadata.model_type,
-                "source": model_source,
+                "artifact_id": current_bundle.metadata.artifact_id[:8],
+                "model_type": current_bundle.metadata.model_type,
+                "source": current_source,
             }
 
         # Determine alias to use
@@ -471,14 +388,14 @@ async def reload_model(
                 reload_time_ms=duration_ms,
             )
 
-        # Atomic swap
-        artifact_bundle = new_bundle
-        model_source = new_source
+        # Atomic swap via app.state
+        app.state.artifact_bundle = new_bundle
+        app.state.model_source = new_source
 
         current_info = {
-            "artifact_id": artifact_bundle.metadata.artifact_id[:8],
-            "model_type": artifact_bundle.metadata.model_type,
-            "source": model_source,
+            "artifact_id": new_bundle.metadata.artifact_id[:8],
+            "model_type": new_bundle.metadata.model_type,
+            "source": new_source,
         }
 
         record_model_load("success", "mlflow_reload")

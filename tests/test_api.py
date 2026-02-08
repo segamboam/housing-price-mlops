@@ -7,8 +7,11 @@ Must verify endpoints return correct responses and handle errors.
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.main import app, check_feature_ranges
+from src.api.main import app
 from src.api.schemas import HousingFeatures
+from src.api.service import PredictionService
+from src.artifacts.bundle import MLArtifactBundle
+from src.config.settings import get_settings
 
 
 @pytest.fixture
@@ -75,6 +78,11 @@ class TestPredictEndpoint:
             response = client.post("/predict", json=invalid_data)
 
         assert response.status_code == 422
+        # Verify unified error format
+        data = response.json()
+        assert data["code"] == "VALIDATION_ERROR"
+        assert "errors" in data
+        assert len(data["errors"]) > 0
 
     def test_predict_with_missing_fields_returns_422(self, mock_artifact_bundle):
         """Predict returns 422 when required fields are missing."""
@@ -88,45 +96,66 @@ class TestPredictEndpoint:
             response = client.post("/predict", json=incomplete_data)
 
         assert response.status_code == 422
+        data = response.json()
+        assert data["code"] == "VALIDATION_ERROR"
+        assert len(data["errors"]) >= 11  # At least 11 missing fields
 
 
 class TestFeatureRangeChecking:
-    """Tests for check_feature_ranges function."""
+    """Tests for PredictionService._check_feature_ranges via the service layer."""
 
-    def test_feature_in_range_no_warning(self, sample_features_dict, feature_stats):
+    def _make_service(self, mock_bundle: MLArtifactBundle) -> PredictionService:
+        """Helper to create a PredictionService with the given bundle."""
+        return PredictionService(bundle=mock_bundle, settings=get_settings())
+
+    def test_feature_in_range_no_warning(
+        self, sample_features_dict, feature_stats, mock_artifact_bundle
+    ):
         """No warning when feature is in range."""
+        mock_artifact_bundle.metadata.feature_stats = feature_stats
+        service = self._make_service(mock_artifact_bundle)
         features = HousingFeatures(**sample_features_dict)
 
-        warnings = check_feature_ranges(features, feature_stats)
+        warnings = service._check_feature_ranges(features)
 
         # CRIM=0.00632 is exactly at min, should not trigger warning
         crim_warnings = [w for w in warnings if "CRIM" in w]
         assert len(crim_warnings) == 0
 
-    def test_feature_below_min_generates_warning(self, sample_features_dict, feature_stats):
+    def test_feature_below_min_generates_warning(
+        self, sample_features_dict, feature_stats, mock_artifact_bundle
+    ):
         """Warning generated when feature below min."""
+        mock_artifact_bundle.metadata.feature_stats = feature_stats
+        service = self._make_service(mock_artifact_bundle)
         # Use DIS which allows values > 0, set below the training min
         sample_features_dict["DIS"] = 0.5  # Below min of 1.1296
         features = HousingFeatures(**sample_features_dict)
 
-        warnings = check_feature_ranges(features, feature_stats)
+        warnings = service._check_feature_ranges(features)
 
         assert any("DIS" in w and "below" in w for w in warnings)
 
-    def test_feature_above_max_generates_warning(self, sample_features_dict, feature_stats):
+    def test_feature_above_max_generates_warning(
+        self, sample_features_dict, feature_stats, mock_artifact_bundle
+    ):
         """Warning generated when feature above max."""
+        mock_artifact_bundle.metadata.feature_stats = feature_stats
+        service = self._make_service(mock_artifact_bundle)
         sample_features_dict["CRIM"] = 100.0  # Above max of 88.9762
         features = HousingFeatures(**sample_features_dict)
 
-        warnings = check_feature_ranges(features, feature_stats)
+        warnings = service._check_feature_ranges(features)
 
         assert any("CRIM" in w and "above" in w for w in warnings)
 
-    def test_empty_stats_no_warnings(self, sample_features_dict):
+    def test_empty_stats_no_warnings(self, sample_features_dict, mock_artifact_bundle):
         """No warnings with empty feature stats."""
+        mock_artifact_bundle.metadata.feature_stats = {}
+        service = self._make_service(mock_artifact_bundle)
         features = HousingFeatures(**sample_features_dict)
 
-        warnings = check_feature_ranges(features, {})
+        warnings = service._check_feature_ranges(features)
 
         assert len(warnings) == 0
 
@@ -331,3 +360,67 @@ class TestModelReloadEndpoint:
         assert data["status"] == "failed"
         # Model should be unchanged
         assert data["previous_model"] == data["current_model"]
+
+
+class TestUnifiedErrorResponses:
+    """Tests for the unified error handling format."""
+
+    def test_422_has_unified_format(self, mock_artifact_bundle):
+        """Validation errors return ErrorResponse with code and errors list."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            response = client.post("/predict", json={"CRIM": "bad"})
+
+        assert response.status_code == 422
+        data = response.json()
+        assert data["code"] == "VALIDATION_ERROR"
+        assert data["detail"] == "Invalid input data"
+        assert isinstance(data["errors"], list)
+        assert len(data["errors"]) > 0
+        # Each error should have field & message
+        for err in data["errors"]:
+            assert "message" in err
+
+    def test_503_has_unified_format(self, mock_artifact_bundle, monkeypatch):
+        """503 when no model loaded returns ErrorResponse format."""
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        # Mock loaders to return None (no model available)
+        monkeypatch.setattr(
+            "src.api.main.load_bundle_from_mlflow",
+            lambda alias=None: (None, None),
+        )
+        monkeypatch.setattr(
+            "src.api.main.load_artifact_bundle",
+            lambda: (None, None),
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/predict",
+                json={
+                    "CRIM": 0.1,
+                    "ZN": 18.0,
+                    "INDUS": 2.31,
+                    "CHAS": 0,
+                    "NOX": 0.538,
+                    "RM": 6.575,
+                    "AGE": 65.2,
+                    "DIS": 4.09,
+                    "RAD": 1,
+                    "TAX": 296.0,
+                    "PTRATIO": 15.3,
+                    "B": 396.9,
+                    "LSTAT": 4.98,
+                },
+            )
+
+        assert response.status_code == 503
+        data = response.json()
+        assert data["code"] == "SERVICE_UNAVAILABLE"
+        assert "detail" in data
